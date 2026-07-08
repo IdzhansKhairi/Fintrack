@@ -81,6 +81,14 @@
       "bank": "Maybank (Savings)",
       "accountNumber": "562142813015",
       "imagePath": "/qr/others/maybank-savings-qr-aminSafri.jpeg"
+    },
+    {
+      "id": "maybank-savings-qr-faatinAqeela",
+      "ownerName": "Faatin Aqeela",
+      "accountHolderName": "FAATIN AQEELA BINTI GHAZALI",
+      "bank": "Maybank (Savings)",
+      "accountNumber": "162311958917",
+      "imagePath": "/qr/others/maybank-savings-qr-faatinAqeela.jpeg"
     }
   ]
 }
