@@ -73,6 +73,14 @@
       "bank": "Maybank (Savings)",
       "accountNumber": "164258669388",
       "imagePath": "/qr/others/maybank-savings-qr-luqmanHakim.png"
+    },
+    {
+      "id": "maybank-savings-qr-aminSafri",
+      "ownerName": "Amin Safri",
+      "accountHolderName": "MUHAMMAD AMIN BIN SAFRI",
+      "bank": "Maybank (Savings)",
+      "accountNumber": "562142813015",
+      "imagePath": "/qr/others/maybank-savings-qr-aminSafri.jpeg"
     }
   ]
 }
