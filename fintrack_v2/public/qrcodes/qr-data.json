@@ -1,0 +1,94 @@
+{
+  "myQR": [
+    {
+      "id": "maybank-mae",
+      "ownerName": "Idzhans Khairi",
+      "accountHolderName": "MUHAMMAD IDZHANS KHAIRI",
+      "bank": "Maybank (MAE)",
+      "accountNumber": "014271684888",
+      "imagePath": "/qr/personal/maybank-mae-qr-idzhans.jpeg"
+    },
+    {
+      "id": "maybank-savings",
+      "ownerName": "Idzhans Khairi",
+      "accountHolderName": "MUHAMMAD IDZHANS KHAIRI",
+      "bank": "Maybank (Savings)",
+      "accountNumber": "162759284166",
+      "imagePath": "/qr/personal/maybank-savings-qr-idzhans.jpeg"
+    },
+    {
+      "id": "rhb-savings",
+      "ownerName": "Idzhans Khairi",
+      "accountHolderName": "MUHAMMAD IDZHANS KHAIRI",
+      "bank": "RHB Bank",
+      "accountNumber": "16409400188568",
+      "imagePath": "/qr/personal/rhb-savings-qr-idzhans.jpeg"
+    },
+    {
+      "id": "tng-ewallet",
+      "ownerName": "Idzhans Khairi",
+      "accountHolderName": "MUHAMMAD IDZHANS KHAIRI",
+      "bank": "Touch N Go E-Wallet",
+      "accountNumber": "100566708622",
+      "imagePath": "/qr/personal/tng-ewallet-qr-idzhans.jpeg"
+    }
+  ],
+  "othersQR": [
+    {
+      "id": "bankIslam-idzhans-qr-mama",
+      "ownerName": " Mama",
+      "accountHolderName": "MUHAMMAD IDZHANS KHAIRI",
+      "bank": "Bank Islam",
+      "accountNumber": "12113025100269",
+      "imagePath": "/qr/others/bankIslam-idzhans-qr-mama.jpg"
+    },
+    {
+      "id": "maybank-savings-lenard-yang",
+      "ownerName": "Lenard Yang",
+      "accountHolderName": "LENARD YANG PENG JIAN",
+      "bank": "Maybank (Savings)",
+      "accountNumber": "112688164083",
+      "imagePath": "/qr/others/maybank-savings-qr-lenardYang.jpeg"
+    },
+    {
+      "id": "maybank-mae-ariff-hafizal",
+      "ownerName": "Ariff Hafizal",
+      "accountHolderName": "ARIFF HAFIZAL BIN AHMAD HUSNI",
+      "bank": "Maybank (MAE)",
+      "accountNumber": "512521259231",
+      "imagePath": "/qr/others/maybank-mae-qr-ariffHafizal.jpeg"
+    },
+    {
+      "id": "maybank-savings-qr-liyanaBatrisya",
+      "ownerName": "Liyana Batrisya",
+      "accountHolderName": "NUR LIYANA BATRISYA BINTI AZHAR",
+      "bank": "Maybank (Savings)",
+      "accountNumber": "151584321342",
+      "imagePath": "/qr/others/maybank-savings-qr-liyanaBatrisya.jpeg"
+    },
+    {
+      "id": "maybank-savings-qr-luqmanHakim",
+      "ownerName": "Luqman Hakim",
+      "accountHolderName": "LUQMAN HAKIM BIN MD SHANI",
+      "bank": "Maybank (Savings)",
+      "accountNumber": "164258669388",
+      "imagePath": "/qr/others/maybank-savings-qr-luqmanHakim.png"
+    },
+    {
+      "id": "maybank-savings-qr-aminSafri",
+      "ownerName": "Amin Safri",
+      "accountHolderName": "MUHAMMAD AMIN BIN SAFRI",
+      "bank": "Maybank (Savings)",
+      "accountNumber": "562142813015",
+      "imagePath": "/qr/others/maybank-savings-qr-aminSafri.jpeg"
+    },
+    {
+      "id": "maybank-savings-qr-faatinAqeela",
+      "ownerName": "Faatin Aqeela",
+      "accountHolderName": "FAATIN AQEELA BINTI GHAZALI",
+      "bank": "Maybank (Savings)",
+      "accountNumber": "162311958917",
+      "imagePath": "/qr/others/maybank-savings-qr-faatinAqeela.jpeg"
+    }
+  ]
+}

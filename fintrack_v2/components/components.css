@@ -1,0 +1,27 @@
+/* ===========================
+   SIDEBAR
+   =========================== */
+.sidebar {
+    background-color: #032617 !important;
+}
+
+.sidebar .logo-img {
+    border-radius: 10px;
+}
+
+.sidebar .logo-text {
+    font-family: var(--font-poppins), 'Poppins', sans-serif;
+    color: #ffffff;
+}
+
+.sidebar .logo-subtext {
+    font-family: var(--font-poppins), 'Poppins', sans-serif;
+    color: #dbe7da;
+    font-size: 0.60rem;
+    font-weight: 400;
+}
+
+.sidebar .border-bottom {
+    /* Adjust the 0.1 opacity higher if you want the line to be brighter */
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
