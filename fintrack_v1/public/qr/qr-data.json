@@ -89,6 +89,14 @@
       "bank": "Maybank (Savings)",
       "accountNumber": "162311958917",
       "imagePath": "/qr/others/maybank-savings-qr-faatinAqeela.jpeg"
+    },
+    {
+      "id": "cimb-savings-qr-aqilahSyamilah",
+      "ownerName": "Aqilah Syamilah (Mel)",
+      "accountHolderName": "AQILAH SYAMILAH",
+      "bank": "CIMB (Savings)",
+      "accountNumber": "7615808830",
+      "imagePath": "/qr/others/cimb-savings-qr-aqilahSyamilah.jpeg"
     }
   ]
 }

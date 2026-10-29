@@ -45,10 +45,23 @@ h3 {
 }
 
 .page-body-padding {
-  max-width: 1400px;
-  margin-left: auto;
-  margin-right: auto;
   width: 100%;
+  max-width: 1350px;
+  /* Keeps it from over-stretching on wide monitors */
+  margin-left: auto;
+  /* Centers the content horizontally */
+  margin-right: auto;
+  /* Centers the content horizontally */
+  padding: 2rem 2.25rem;
+  /* The base padding on left & right */
+  box-sizing: border-box;
+}
+
+/* Optional: slightly tighter padding on mobile screens */
+@media (max-width: 768px) {
+  .page-body-padding {
+    padding: 1.25rem 1rem;
+  }
 }
 
 .page-title {
@@ -66,4 +79,153 @@ h3 {
   color: var(--text-secondary);
   margin-bottom: 1.5rem;
   line-height: 1.5;
+}
+
+
+/* ===========================
+   UNIVERSAL BUTTON
+   =========================== */
+.add-content-button,
+.ant-btn.add-content-button {
+  background-color: #69a980 !important;
+  color: #fcf7dc !important;
+  border: none !important;
+  border-radius: 12px !important;
+  font-family: var(--font-poppins), 'Poppins', sans-serif !important;
+  font-size: 0.85rem !important;
+  font-weight: 500 !important;
+  padding: 6px 18px !important;
+  height: auto !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08) !important;
+  transition: all 0.2s ease-in-out !important;
+  cursor: pointer;
+}
+
+.add-content-button:hover,
+.ant-btn.add-content-button:hover {
+  background-color: #57926e !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12) !important;
+}
+
+.add-content-button:active,
+.ant-btn.add-content-button:active {
+  background-color: #4a7d5e !important;
+}
+
+/* ===========================
+   UNIVERSAL FINTRACK MODAL
+   =========================== */
+.fintrack-modal .ant-modal-content {
+  border-radius: 18px !important;
+  padding: 24px !important;
+  background-color: #ffffff !important;
+  box-shadow: 0 12px 32px rgba(3, 38, 23, 0.14) !important;
+  font-family: var(--font-poppins), 'Poppins', sans-serif !important;
+}
+
+.fintrack-modal .ant-modal-header {
+  background: transparent !important;
+  margin-bottom: 8px !important;
+}
+
+.fintrack-modal .ant-modal-title {
+  font-family: var(--font-poppins), 'Poppins', sans-serif !important;
+  font-size: 1.15rem !important;
+  font-weight: 600 !important;
+  color: var(--text-primary) !important;
+}
+
+.fintrack-modal-cancel-btn,
+.ant-btn.fintrack-modal-cancel-btn {
+  background-color: #ffffff !important;
+  color: #1a2e23 !important;
+  border: 1px solid #dbe3dc !important;
+  border-radius: 50px !important;
+  font-family: var(--font-poppins), 'Poppins', sans-serif !important;
+  font-size: 0.85rem !important;
+  font-weight: 500 !important;
+  padding: 7px 20px !important;
+  height: auto !important;
+  transition: all 0.2s ease-in-out !important;
+}
+
+.fintrack-modal-cancel-btn:hover,
+.ant-btn.fintrack-modal-cancel-btn:hover {
+  background-color: #f3f7f4 !important;
+  border-color: #c5d1c7 !important;
+  color: #1a2e23 !important;
+}
+
+.fintrack-modal-danger-btn,
+.ant-btn.fintrack-modal-danger-btn {
+  background-color: #e11d48 !important;
+  color: #ffffff !important;
+  border: none !important;
+  border-radius: 50px !important;
+  font-family: var(--font-poppins), 'Poppins', sans-serif !important;
+  font-size: 0.85rem !important;
+  font-weight: 500 !important;
+  padding: 7px 22px !important;
+  height: auto !important;
+  box-shadow: 0 2px 4px rgba(225, 29, 72, 0.2) !important;
+  transition: all 0.2s ease-in-out !important;
+}
+
+.fintrack-modal-danger-btn:hover,
+.ant-btn.fintrack-modal-danger-btn:hover {
+  background-color: #be123c !important;
+  color: #ffffff !important;
+}
+
+.fintrack-modal-primary-btn,
+.ant-btn.fintrack-modal-primary-btn {
+  background-color: #69a980 !important;
+  color: #fcf7dc !important;
+  border: none !important;
+  border-radius: 50px !important;
+  font-family: var(--font-poppins), 'Poppins', sans-serif !important;
+  font-size: 0.85rem !important;
+  font-weight: 500 !important;
+  padding: 7px 22px !important;
+  height: auto !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08) !important;
+  transition: all 0.2s ease-in-out !important;
+}
+
+.fintrack-modal-primary-btn:hover,
+.ant-btn.fintrack-modal-primary-btn:hover {
+  background-color: #57926e !important;
+  color: #ffffff !important;
+}
+
+/* Custom form inputs inside Fintrack modals */
+.fintrack-modal-input {
+  border-radius: 12px !important;
+  padding: 9px 14px !important;
+  font-size: 0.88rem !important;
+  border: 1px solid #dbe3dc !important;
+  color: #1a2e23 !important;
+  background-color: #ffffff !important;
+  font-family: var(--font-poppins), 'Poppins', sans-serif !important;
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out !important;
+}
+
+.fintrack-modal-input:focus {
+  border-color: #69a980 !important;
+  box-shadow: 0 0 0 2px rgba(105, 169, 128, 0.18) !important;
+  outline: none !important;
+}
+
+.fintrack-modal-label {
+  font-family: var(--font-poppins), 'Poppins', sans-serif !important;
+  font-size: 0.78rem !important;
+  font-weight: 600 !important;
+  color: #1a2e23 !important;
+  margin-bottom: 6px !important;
+  display: block;
 }

@@ -25,3 +25,58 @@
     /* Adjust the 0.1 opacity higher if you want the line to be brighter */
     border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
 }
+
+.sidebar .border-top {
+    border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.sidebar-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background-color: #69a980;
+    color: #ffffff;
+    font-family: var(--font-poppins), 'Poppins', sans-serif;
+    font-weight: 600;
+    font-size: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.sidebar-user-name {
+    font-family: var(--font-poppins), 'Poppins', sans-serif;
+    color: #ffffff;
+    font-size: 0.78rem;
+    font-weight: 600;
+    line-height: 1.25;
+}
+
+.sidebar-user-email {
+    font-family: var(--font-poppins), 'Poppins', sans-serif;
+    color: #9db4a6;
+    font-size: 0.68rem;
+    font-weight: 400;
+    line-height: 1.25;
+}
+
+.sidebar-logout-btn {
+    background: transparent;
+    border: none;
+    color: #9db4a6;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+    flex-shrink: 0;
+}
+
+.sidebar-logout-btn:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+}
