@@ -570,7 +570,7 @@ export default function AccountsPage() {
                 className="col-12 col-md-6 col-xl-4"
               >
                 <Card
-                  className="rounded-4 border-0 shadow-sm h-100 position-relative overflow-hidden"
+                  className="rounded-4 border-0 shadow-sm h-100 position-relative"
                   styles={{
                     body: {
                       display: "flex",
@@ -581,21 +581,6 @@ export default function AccountsPage() {
                     },
                   }}
                 >
-                  {/* Decorative quarter circle in top-right */}
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: -28,
-                      right: -28,
-                      width: 110,
-                      height: 110,
-                      borderRadius: "50%",
-                      backgroundColor: badgeColor,
-                      opacity: 0.1,
-                      pointerEvents: "none",
-                    }}
-                  />
-
                   <div>
                     {/* Card Header */}
                     <div className="d-flex justify-content-between align-items-start mb-3 position-relative">
@@ -640,10 +625,13 @@ export default function AccountsPage() {
                         <button
                           type="button"
                           onClick={() => handleOpenEditAccount(account)}
-                          className="btn btn-sm text-dark fw-medium p-0 border-0"
-                          style={{ fontSize: "0.75rem" }}
+                          className="btn btn-sm text-secondary p-0 border-0"
+                          title="Edit account"
                         >
-                          Edit
+                          <i
+                            className="bi bi-pencil"
+                            style={{ fontSize: "0.85rem" }}
+                          />
                         </button>
                         <button
                           type="button"
@@ -722,9 +710,12 @@ export default function AccountsPage() {
                                   handleOpenEditSubAccount(account, sub)
                                 }
                                 className="btn btn-sm text-secondary p-0 border-0"
-                                style={{ fontSize: "0.72rem" }}
+                                title="Edit sub-account"
                               >
-                                Edit
+                                <i
+                                  className="bi bi-pencil"
+                                  style={{ fontSize: "0.78rem" }}
+                                />
                               </button>
                               <button
                                 type="button"
