@@ -1,0 +1,5 @@
+Supabase:
+http://127.0.0.1:54323
+
+Localhost UI:
+http://localhost:3000                                                           

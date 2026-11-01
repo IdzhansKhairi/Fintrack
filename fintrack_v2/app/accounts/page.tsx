@@ -239,11 +239,10 @@ export default function AccountsPage() {
       latest.getFullYear() === now.getFullYear();
 
     if (isSameDay) return "updated today";
-    return `updated ${latest.toLocaleDateString("en-MY", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    })}`;
+    const dd = String(latest.getDate()).padStart(2, "0");
+    const mm = String(latest.getMonth() + 1).padStart(2, "0");
+    const yyyy = latest.getFullYear();
+    return `updated ${dd}-${mm}-${yyyy}`;
   };
 
   // ==========================================

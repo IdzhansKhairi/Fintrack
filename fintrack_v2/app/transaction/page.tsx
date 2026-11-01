@@ -57,6 +57,7 @@ const EXPENSE_CATEGORIES = [
   "Entertainment",
   "Hobby",
   "Family & Gifts",
+  "Tabung / Savings",
   "Others",
 ];
 
@@ -67,6 +68,7 @@ const INCOME_CATEGORIES = [
   "Gift / Allowance",
   "Payback / Reimbursement",
   "Investment Return",
+  "Tabung Withdrawal",
   "Others",
 ];
 
@@ -125,6 +127,15 @@ function getCurrentTimeString(): string {
   return `${hours}:${minutes}`;
 }
 
+function formatDisplayDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return "—";
+  const parts = dateStr.slice(0, 10).split("-");
+  if (parts.length === 3) {
+    return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  }
+  return dateStr;
+}
+
 export default function TransactionPage() {
   const supabase = createClient();
 
@@ -157,6 +168,7 @@ export default function TransactionPage() {
   const [cancellingTx, setCancellingTx] = useState<TransactionRecord | null>(null);
   const [cancellingLoading, setCancellingLoading] = useState<boolean>(false);
   const [cancelModalError, setCancelModalError] = useState<string | null>(null);
+  const [tabungLinks, setTabungLinks] = useState<Record<string, string>>({});
 
   // Bottom Toast Notification State
   const [toastOpen, setToastOpen] = useState<boolean>(false);
@@ -270,6 +282,34 @@ export default function TransactionPage() {
 
       setAllAccounts(mergedAccounts);
       setTransactions(mappedTxs);
+
+      // Load linked Tabung names for transactions created from Tabung contributions
+      const [linkRes, tabungRes] = await Promise.all([
+        supabase
+          .from("tabung_contribution")
+          .select("transaction_id, tabung_id")
+          .eq("user_id", user.id)
+          .eq("is_active", true)
+          .not("transaction_id", "is", null),
+        supabase
+          .from("tabung")
+          .select("tabung_id, tabung_name")
+          .eq("user_id", user.id),
+      ]);
+      if (!linkRes.error && !tabungRes.error) {
+        const tabungNames = new Map<string, string>();
+        (tabungRes.data || []).forEach((t) =>
+          tabungNames.set(t.tabung_id, t.tabung_name)
+        );
+        const links: Record<string, string> = {};
+        (linkRes.data || []).forEach((row) => {
+          if (row.transaction_id) {
+            links[row.transaction_id] =
+              tabungNames.get(row.tabung_id) || "Tabung";
+          }
+        });
+        setTabungLinks(links);
+      }
     } catch (err) {
       console.error("Failed to fetch transactions:", err);
     } finally {
@@ -657,6 +697,13 @@ export default function TransactionPage() {
         .eq("user_id", userId);
 
       if (txError) throw txError;
+
+      // 1b. Also soft-delete any linked Tabung contribution
+      await supabase
+        .from("tabung_contribution")
+        .update({ is_active: false })
+        .eq("transaction_id", cancellingTx.transaction_id)
+        .eq("user_id", userId);
 
       // 2. Update parent account balance
       if (parentAcc) {
@@ -1124,7 +1171,7 @@ export default function TransactionPage() {
                             lineHeight: 1.3,
                           }}
                         >
-                          {tx.transaction_date}
+                          {formatDisplayDate(tx.transaction_date)}
                         </div>
                         <div
                           style={{
@@ -1607,6 +1654,25 @@ export default function TransactionPage() {
           </div>
         )}
 
+        {cancellingTx && tabungLinks[cancellingTx.transaction_id] && (
+          <div
+            style={{
+              backgroundColor: "#f6faf7",
+              border: "1px solid #e2ebe4",
+              color: "#2e4738",
+              borderRadius: "10px",
+              padding: "9px 12px",
+              fontSize: "0.78rem",
+              marginBottom: "14px",
+            }}
+          >
+            <i className="bi bi-piggy-bank me-1" />
+            Linked to Tabung &quot;
+            <strong>{tabungLinks[cancellingTx.transaction_id]}</strong>&quot;.
+            Cancelling this transaction will also remove that entry from the fund.
+          </div>
+        )}
+
         {cancellingTx && (
           <>
             <div
@@ -1674,7 +1740,7 @@ export default function TransactionPage() {
                     color: "#1a2e23",
                   }}
                 >
-                  {cancellingTx.transaction_date} · {cancellingTx.transaction_time}
+                  {formatDisplayDate(cancellingTx.transaction_date)} · {cancellingTx.transaction_time}
                 </span>
               </div>
 
