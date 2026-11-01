@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { Card, Modal, Button } from "antd";
 import AddButton from "@/components/AddButtton";
 import ConfirmModal from "@/components/ConfirmModal";
+import BottomToast, { BottomToastType } from "@/components/BottomToast";
 import { createClient } from "@/utils/supabase/client";
 
 interface SubAccount {
@@ -133,6 +134,20 @@ export default function AccountsPage() {
     parent: Account;
   } | null>(null);
   const [deletingLoading, setDeletingLoading] = useState(false);
+
+  // Bottom Toast Notification State
+  const [toastOpen, setToastOpen] = useState<boolean>(false);
+  const [toastMessage, setToastMessage] = useState<string>("");
+  const [toastType, setToastType] = useState<BottomToastType>("success");
+
+  const showToast = useCallback(
+    (message: string, type: BottomToastType = "success") => {
+      setToastMessage(message);
+      setToastType(type);
+      setToastOpen(true);
+    },
+    []
+  );
 
   const fetchAccounts = useCallback(async () => {
     setLoading(true);
@@ -307,6 +322,7 @@ export default function AccountsPage() {
         });
 
         if (error) throw error;
+        showToast(`Account "${finalAccountName}" added`, "success");
       } else if (accountModalMode === "edit" && editingAccount) {
         const { error } = await supabase
           .from("accounts")
@@ -319,6 +335,7 @@ export default function AccountsPage() {
           .eq("user_id", userId);
 
         if (error) throw error;
+        showToast(`Account "${finalAccountName}" updated`, "success");
       }
 
       setAccountModalOpen(false);
@@ -408,6 +425,10 @@ export default function AccountsPage() {
         });
 
         if (error) throw error;
+        showToast(
+          `Sub-account "${trimmedName}" added to ${targetParentAccount.account_name}`,
+          "success"
+        );
       } else if (subModalMode === "edit" && editingSubAccount) {
         const { error } = await supabase
           .from("subaccounts")
@@ -419,6 +440,7 @@ export default function AccountsPage() {
           .eq("user_id", userId);
 
         if (error) throw error;
+        showToast(`Sub-account "${trimmedName}" updated`, "success");
       }
 
       setSubModalOpen(false);
@@ -450,7 +472,9 @@ export default function AccountsPage() {
           .eq("user_id", userId),
       ]);
 
+      const removedAccName = deletingAccount.account_name;
       setDeletingAccount(null);
+      showToast(`Account "${removedAccName}" removed`, "danger");
       await fetchAccounts();
     } catch (err) {
       console.error("Failed to remove account:", err);
@@ -469,7 +493,9 @@ export default function AccountsPage() {
         .eq("subaccount_id", deletingSubAccount.sub.subaccount_id)
         .eq("user_id", userId);
 
+      const removedSubName = deletingSubAccount.sub.subaccount_name;
       setDeletingSubAccount(null);
+      showToast(`Sub-account "${removedSubName}" removed`, "danger");
       await fetchAccounts();
     } catch (err) {
       console.error("Failed to remove sub-account:", err);
@@ -764,12 +790,19 @@ export default function AccountsPage() {
                       onClick={() => handleOpenAddSubAccount(account)}
                       className="btn btn-sm w-100 rounded-pill fw-medium"
                       style={{
-                        backgroundColor: "#f8faf7",
+                        backgroundColor: "#f9fbf5",
                         border: "1px solid #e2ebe0",
                         color: "#1a2e23",
                         fontSize: "0.78rem",
                         padding: "7px 12px",
+                        transition: "all 0.15s ease",
                       }}
+                      onMouseEnter={(e) =>
+                        (e.currentTarget.style.backgroundColor = "#f0f4ec")
+                      }
+                      onMouseLeave={(e) =>
+                        (e.currentTarget.style.backgroundColor = "#f9fbf5")
+                      }
                     >
                       <i className="bi bi-plus-lg me-1" /> Add sub-account
                     </button>
@@ -1121,6 +1154,14 @@ export default function AccountsPage() {
         loading={deletingLoading}
         onConfirm={handleConfirmDeleteSubAccount}
         onCancel={() => setDeletingSubAccount(null)}
+      />
+
+      {/* Bottom Notification Toast */}
+      <BottomToast
+        open={toastOpen}
+        message={toastMessage}
+        type={toastType}
+        onClose={() => setToastOpen(false)}
       />
     </div>
   );

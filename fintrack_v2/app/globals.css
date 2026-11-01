@@ -142,7 +142,7 @@ h3 {
 
 .fintrack-modal-cancel-btn,
 .ant-btn.fintrack-modal-cancel-btn {
-  background-color: #ffffff !important;
+  background-color: #f9fbf5 !important;
   color: #1a2e23 !important;
   border: 1px solid #dbe3dc !important;
   border-radius: 50px !important;
@@ -156,8 +156,24 @@ h3 {
 
 .fintrack-modal-cancel-btn:hover,
 .ant-btn.fintrack-modal-cancel-btn:hover {
-  background-color: #f3f7f4 !important;
+  background-color: #f0f4ec !important;
   border-color: #c5d1c7 !important;
+  color: #1a2e23 !important;
+}
+
+/* Reusable subtle #f9fbf5 card buttons (Copy, Download, Edit, Add sub-account, etc.) */
+.fintrack-subtle-btn,
+.ant-btn.fintrack-subtle-btn {
+  background-color: #f9fbf5 !important;
+  border: 1px solid #e2ebe4 !important;
+  color: #1a2e23 !important;
+  transition: all 0.15s ease-in-out !important;
+}
+
+.fintrack-subtle-btn:hover,
+.ant-btn.fintrack-subtle-btn:hover {
+  background-color: #f0f4ec !important;
+  border-color: #cdd9ce !important;
   color: #1a2e23 !important;
 }
 
@@ -205,6 +221,8 @@ h3 {
 
 /* Custom form inputs inside Fintrack modals */
 .fintrack-modal-input {
+  width: 100% !important;
+  box-sizing: border-box !important;
   border-radius: 12px !important;
   padding: 9px 14px !important;
   font-size: 0.88rem !important;
@@ -215,7 +233,26 @@ h3 {
   transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out !important;
 }
 
-.fintrack-modal-input:focus {
+select.fintrack-modal-input,
+.form-select.fintrack-modal-input {
+  padding-right: 36px !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+}
+
+.fintrack-modal-input.fintrack-input-with-icon {
+  padding-left: 36px !important;
+}
+
+.fintrack-modal-input:disabled {
+  background-color: #f3f6f4 !important;
+  color: #7b8f82 !important;
+  cursor: not-allowed !important;
+}
+
+.fintrack-modal-input:focus,
+.fintrack-modal-input:focus-within {
   border-color: #69a980 !important;
   box-shadow: 0 0 0 2px rgba(105, 169, 128, 0.18) !important;
   outline: none !important;
@@ -228,4 +265,39 @@ h3 {
   color: #1a2e23 !important;
   margin-bottom: 6px !important;
   display: block;
+}
+
+/* ===========================
+   BOTTOM NOTIFICATION TOAST
+   =========================== */
+@keyframes fintrackToastSlideUp {
+  0% {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fintrack-bottom-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 2100;
+  background-color: #ffffff;
+  color: #1a2e23;
+  border-radius: 12px;
+  padding: 14px 18px;
+  min-width: 300px;
+  max-width: min(420px, calc(100vw - 32px));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  border: 1px solid #e5ebe6;
+  font-family: var(--font-poppins), 'Poppins', sans-serif;
+  cursor: pointer;
+  animation: fintrackToastSlideUp 0.2s ease-out forwards;
 }

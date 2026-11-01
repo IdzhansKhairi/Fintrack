@@ -80,3 +80,18 @@
     background-color: rgba(255, 255, 255, 0.1);
     color: #ffffff;
 }
+
+/* Ant Design Menu Group Title styling in Sidebar */
+.sidebar .ant-menu-item-group-title {
+    font-family: var(--font-poppins), 'Poppins', sans-serif !important;
+    font-size: 0.65rem !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.08em !important;
+    text-transform: uppercase !important;
+    color: #7b9e8a !important;
+    padding: 14px 16px 4px 16px !important;
+}
+
+.sidebar .ant-menu-item-group:first-child .ant-menu-item-group-title {
+    padding-top: 0 !important;
+}

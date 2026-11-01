@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState } from 'react';
 import { Card, Button, Segmented, notification, Row, Col, Image, ConfigProvider } from 'antd';
@@ -144,18 +144,30 @@ export default function QRCodesPage() {
               {/* Action Buttons */}
               <div className="d-flex gap-2 mt-auto">
                 <Button
-                  className="flex-grow-1"
+                  className="flex-grow-1 fintrack-subtle-btn"
                   icon={<i className="bi bi-copy" />}
                   onClick={() => handleCopy(item.accountNumber)}
-                  style={{ borderRadius: '8px' }}
+                  style={{
+                    backgroundColor: '#f9fbf5',
+                    borderColor: '#e2ebe4',
+                    color: '#1a2e23',
+                    borderRadius: '8px',
+                    fontWeight: 500,
+                  }}
                 >
                   Copy
                 </Button>
                 <Button
-                  className="flex-grow-1"
+                  className="flex-grow-1 fintrack-subtle-btn"
                   icon={<i className="bi bi-download" />}
                   onClick={() => handleDownload(item.imagePath, item.id)}
-                  style={{ borderRadius: '8px' }}
+                  style={{
+                    backgroundColor: '#f9fbf5',
+                    borderColor: '#e2ebe4',
+                    color: '#1a2e23',
+                    borderRadius: '8px',
+                    fontWeight: 500,
+                  }}
                 >
                   Download
                 </Button>

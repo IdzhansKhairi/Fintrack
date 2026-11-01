@@ -85,16 +85,44 @@ export default function Sidebar() {
   };
 
   const menuItems: MenuProps["items"] = [
-    { key: "/dashboard", icon: <i className="bi bi-grid-1x2" />, label: "Dashboard" },
-    { key: "/accounts", icon: <i className="bi bi-wallet2" />, label: "Accounts" },
-    { key: "/transaction", icon: <i className="bi bi-arrow-left-right" />, label: "Transactions" },
-    { key: "/commitments", icon: <i className="bi bi-arrow-repeat" />, label: "Commitments" },
-    { key: "/financing", icon: <i className="bi bi-credit-card-2-front" />, label: "Financing" },
-    { key: "/debts", icon: <i className="bi bi-cash-coin" />, label: "Debts" },
-    { key: "/wishlist", icon: <i className="bi bi-heart" />, label: "Wishlist" },
-    { key: "/qrcodes", icon: <i className="bi bi-qr-code-scan" />, label: "QR Codes" },
-    { key: "/insights", icon: <i className="bi bi-pie-chart" />, label: "Insights" },
-    { key: "/tabung", icon: <i className="bi bi-piggy-bank" />, label: "Tabung" },
+    {
+      type: "group",
+      key: "grp-overview",
+      label: "Overview",
+      children: [
+        { key: "/dashboard", icon: <i className="bi bi-grid-1x2" />, label: "Dashboard" },
+        { key: "/insights", icon: <i className="bi bi-pie-chart" />, label: "Insights" },
+      ],
+    },
+    {
+      type: "group",
+      key: "grp-cash-flow",
+      label: "Cash Flow",
+      children: [
+        { key: "/accounts", icon: <i className="bi bi-wallet2" />, label: "Accounts" },
+        { key: "/transaction", icon: <i className="bi bi-arrow-left-right" />, label: "Transactions" },
+        { key: "/qrcodes", icon: <i className="bi bi-qr-code-scan" />, label: "QR Codes" },
+      ],
+    },
+    {
+      type: "group",
+      key: "grp-budgeting",
+      label: "Budgeting",
+      children: [
+        { key: "/commitments", icon: <i className="bi bi-arrow-repeat" />, label: "Commitments" },
+        { key: "/financing", icon: <i className="bi bi-credit-card-2-front" />, label: "Financing" },
+        { key: "/debts", icon: <i className="bi bi-cash-coin" />, label: "Debts" },
+      ],
+    },
+    {
+      type: "group",
+      key: "grp-goals",
+      label: "Goals & Planning",
+      children: [
+        { key: "/tabung", icon: <i className="bi bi-piggy-bank" />, label: "Tabung" },
+        { key: "/wishlist", icon: <i className="bi bi-heart" />, label: "Wishlist" },
+      ],
+    },
   ];
 
   const handleMenuClick: MenuProps["onClick"] = ({ key }) => {
@@ -141,10 +169,10 @@ export default function Sidebar() {
                   darkItemSelectedColor: "#ffffff",
                   darkSubMenuItemBg: "transparent",
                   itemBorderRadius: 12,
-                  itemHeight: 40,
-                  iconSize: 12,
+                  itemHeight: 38,
+                  iconSize: 13,
                   itemMarginInline: 12,
-                  itemMarginBlock: 6,
+                  itemMarginBlock: 4,
                   itemPaddingInline: 16,
                 },
               },
@@ -156,7 +184,7 @@ export default function Sidebar() {
               selectedKeys={[pathname]}
               items={menuItems}
               onClick={handleMenuClick}
-              className="pt-4"
+              className="pt-3 pb-3"
               style={{
                 background: "transparent",
                 border: "none",

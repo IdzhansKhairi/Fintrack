@@ -97,6 +97,14 @@
       "bank": "CIMB (Savings)",
       "accountNumber": "7615808830",
       "imagePath": "/qr/others/cimb-savings-qr-aqilahSyamilah.jpeg"
+    },
+    {
+      "id": "maybank-savings-qr-afiqDanishApple",
+      "ownerName": "Afiq Danish (Apple)",
+      "accountHolderName": "AFIQ DANISH",
+      "bank": "Maybank (Savings)",
+      "accountNumber": "162133354832",
+      "imagePath": "/qr/others/maybank-savings-qr-afiqDanishApple.jpeg"
     }
   ]
 }
