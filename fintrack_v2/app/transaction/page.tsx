@@ -58,6 +58,8 @@ const EXPENSE_CATEGORIES = [
   "Hobby",
   "Family & Gifts",
   "Tabung / Savings",
+  "Debt / Lending",
+  "Debt Repayment",
   "Others",
 ];
 
@@ -67,6 +69,7 @@ const INCOME_CATEGORIES = [
   "Freelance / Side Income",
   "Gift / Allowance",
   "Payback / Reimbursement",
+  "Debt Borrowed",
   "Investment Return",
   "Tabung Withdrawal",
   "Others",
@@ -169,6 +172,9 @@ export default function TransactionPage() {
   const [cancellingLoading, setCancellingLoading] = useState<boolean>(false);
   const [cancelModalError, setCancelModalError] = useState<string | null>(null);
   const [tabungLinks, setTabungLinks] = useState<Record<string, string>>({});
+  const [debtLinks, setDebtLinks] = useState<
+    Record<string, { label: string; kind: "created" | "settled"; status: string }>
+  >({});
 
   // Bottom Toast Notification State
   const [toastOpen, setToastOpen] = useState<boolean>(false);
@@ -309,6 +315,39 @@ export default function TransactionPage() {
           }
         });
         setTabungLinks(links);
+      }
+
+      // Load linked Debts for transactions created from or settling Debts
+      const { data: debtRows, error: debtErr } = await supabase
+        .from("debts")
+        .select(
+          "debts_name, debts_person, status, transaction_id, settled_transaction_id"
+        )
+        .eq("user_id", user.id)
+        .eq("is_active", true);
+      if (!debtErr && debtRows) {
+        const dLinks: Record<
+          string,
+          { label: string; kind: "created" | "settled"; status: string }
+        > = {};
+        debtRows.forEach((d) => {
+          const label = `${d.debts_person} (${d.debts_name})`;
+          if (d.transaction_id) {
+            dLinks[d.transaction_id] = {
+              label,
+              kind: "created",
+              status: d.status,
+            };
+          }
+          if (d.settled_transaction_id) {
+            dLinks[d.settled_transaction_id] = {
+              label,
+              kind: "settled",
+              status: d.status,
+            };
+          }
+        });
+        setDebtLinks(dLinks);
       }
     } catch (err) {
       console.error("Failed to fetch transactions:", err);
@@ -1651,6 +1690,43 @@ export default function TransactionPage() {
             }}
           >
             {cancelModalError}
+          </div>
+        )}
+
+        {cancellingTx && debtLinks[cancellingTx.transaction_id] && (
+          <div
+            style={{
+              backgroundColor: "#f6faf7",
+              border: "1px solid #e2ebe4",
+              color: "#2e4738",
+              borderRadius: "10px",
+              padding: "9px 12px",
+              fontSize: "0.78rem",
+              marginBottom: "14px",
+            }}
+          >
+            <i className="bi bi-arrow-left-right me-1" />
+            {debtLinks[cancellingTx.transaction_id].kind === "settled" ? (
+              <>
+                Linked to Debt settlement with{" "}
+                <strong>{debtLinks[cancellingTx.transaction_id].label}</strong>.
+                Cancelling this transaction will also reopen that debt back to
+                Pending.
+              </>
+            ) : debtLinks[cancellingTx.transaction_id].status === "pending" ? (
+              <>
+                Linked to Debt with{" "}
+                <strong>{debtLinks[cancellingTx.transaction_id].label}</strong>.
+                Cancelling this transaction will also remove that debt record.
+              </>
+            ) : (
+              <>
+                Linked to Debt with{" "}
+                <strong>{debtLinks[cancellingTx.transaction_id].label}</strong>.
+                Cancelling this transaction will unlink the initial account
+                entry from that settled debt.
+              </>
+            )}
           </div>
         )}
 
