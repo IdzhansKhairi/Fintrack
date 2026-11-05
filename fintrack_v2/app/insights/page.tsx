@@ -24,6 +24,7 @@ type TimeframeMode = "weekly" | "monthly" | "yearly";
 
 interface TransactionRecord {
   transaction_id: string;
+  target_account_id?: string | null;
   transaction_type: "income" | "expense";
   amount: number;
   description: string | null;
@@ -102,11 +103,23 @@ const CATEGORY_COLORS: Record<string, string> = {
   "Hobby": "#14b8a6",
   "Family & Gifts": "#a855f7",
   "Rent & Housing": "#dc2626",
+  "Commitments": "#6366f1",
+  "Financing Installment": "#0f766e",
   "Tabung / Savings": "#10b981",
   "Others": "#64748b",
 };
 
 const DEFAULT_COLOR = "#64748b";
+
+/**
+ * Returns true if the transaction is a credit card bill settlement ("+ Pay card")
+ * rather than new spending, so it is not double-counted in expense analytics.
+ */
+function isCreditCardSettlement(tx: TransactionRecord): boolean {
+  return (
+    tx.expense_category === "Credit Card Payment" || Boolean(tx.target_account_id)
+  );
+}
 
 function getCategoryColor(cat: string): string {
   return CATEGORY_COLORS[cat] || DEFAULT_COLOR;
@@ -203,7 +216,7 @@ export default function InsightsPage() {
           supabase
             .from("transactions")
             .select(
-              "transaction_id, transaction_type, amount, description, expense_category, income_category, transaction_date, transaction_time, created_at"
+              "transaction_id, target_account_id, transaction_type, amount, description, expense_category, income_category, transaction_date, transaction_time, created_at"
             )
             .eq("user_id", user.id)
             .eq("is_active", true)
@@ -302,7 +315,8 @@ export default function InsightsPage() {
     for (const tx of currentPeriodTransactions) {
       const amt = Number(tx.amount || 0);
       if (tx.transaction_type === "income") income += amt;
-      else if (tx.transaction_type === "expense") expense += amt;
+      else if (tx.transaction_type === "expense" && !isCreditCardSettlement(tx))
+        expense += amt;
     }
 
     const netSurplus = income - expense;
@@ -342,7 +356,10 @@ export default function InsightsPage() {
 
         if (tx.transaction_type === "income") {
           weeks[weekIdx].income += amt;
-        } else {
+        } else if (
+          tx.transaction_type === "expense" &&
+          !isCreditCardSettlement(tx)
+        ) {
           weeks[weekIdx].expense += amt;
         }
       }
@@ -371,7 +388,11 @@ export default function InsightsPage() {
         if (bucket) {
           const amt = Number(tx.amount || 0);
           if (tx.transaction_type === "income") bucket.income += amt;
-          else bucket.expense += amt;
+          else if (
+            tx.transaction_type === "expense" &&
+            !isCreditCardSettlement(tx)
+          )
+            bucket.expense += amt;
         }
       }
 
@@ -410,7 +431,11 @@ export default function InsightsPage() {
       if (bucket) {
         const amt = Number(tx.amount || 0);
         if (tx.transaction_type === "income") bucket.income += amt;
-        else bucket.expense += amt;
+        else if (
+          tx.transaction_type === "expense" &&
+          !isCreditCardSettlement(tx)
+        )
+          bucket.expense += amt;
       }
     }
 
@@ -435,7 +460,7 @@ export default function InsightsPage() {
     const catMap = new Map<string, { amount: number; count: number }>();
 
     for (const tx of currentPeriodTransactions) {
-      if (tx.transaction_type === "expense") {
+      if (tx.transaction_type === "expense" && !isCreditCardSettlement(tx)) {
         const cat = tx.expense_category?.trim() || "Others";
         const amt = Number(tx.amount || 0);
         const existing = catMap.get(cat) || { amount: 0, count: 0 };
@@ -469,12 +494,13 @@ export default function InsightsPage() {
   const drilldownTransactions = useMemo(() => {
     if (!selectedCategoryFilter) {
       return currentPeriodTransactions.filter(
-        (t) => t.transaction_type === "expense"
+        (t) => t.transaction_type === "expense" && !isCreditCardSettlement(t)
       );
     }
     return currentPeriodTransactions.filter(
       (t) =>
         t.transaction_type === "expense" &&
+        !isCreditCardSettlement(t) &&
         (t.expense_category?.trim() || "Others") === selectedCategoryFilter
     );
   }, [currentPeriodTransactions, selectedCategoryFilter]);

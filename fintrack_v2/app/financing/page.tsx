@@ -24,6 +24,8 @@ interface Account {
   account_type: string;
   account_balance: number;
   is_active: boolean;
+  is_credit_card: boolean;
+  credit_limit: number | null;
   subaccounts: SubAccount[];
 }
 
@@ -56,6 +58,7 @@ interface FinancingPlan {
   sync_to_commitments: boolean;
   status: FinancingStatus;
   financing_notes: string | null;
+  account_id: string | null;
   is_active: boolean;
   created_at: string;
   installments: FinancingInstallment[];
@@ -428,6 +431,8 @@ export default function FinancingPage() {
   const [formStartDate, setFormStartDate] = useState<string>(getTodayDateString());
   const [formRealignDates, setFormRealignDates] = useState<boolean>(true);
   const [formSyncCommitments, setFormSyncCommitments] = useState<boolean>(false);
+  const [formLinkCreditCard, setFormLinkCreditCard] = useState<boolean>(false);
+  const [formCreditCardId, setFormCreditCardId] = useState<string>("");
   const [formNotes, setFormNotes] = useState<string>("");
   const [planModalError, setPlanModalError] = useState<string | null>(null);
   const [savingPlan, setSavingPlan] = useState<boolean>(false);
@@ -558,6 +563,13 @@ export default function FinancingPage() {
         account_type: acc.account_type,
         account_balance: Number(acc.account_balance),
         is_active: acc.is_active,
+        is_credit_card: Boolean(
+          acc.is_credit_card || acc.account_type === "Credit Card"
+        ),
+        credit_limit:
+          acc.credit_limit !== null && acc.credit_limit !== undefined
+            ? Number(acc.credit_limit)
+            : null,
         subaccounts: rawSubs
           .filter((s) => s.account_id === acc.account_id)
           .map((s) => ({
@@ -613,6 +625,7 @@ export default function FinancingPage() {
           sync_to_commitments: Boolean(p.sync_to_commitments),
           status: p.status as FinancingStatus,
           financing_notes: p.financing_notes || null,
+          account_id: p.account_id || null,
           is_active: p.is_active,
           created_at: p.created_at,
           installments: planInstallments,
@@ -789,6 +802,45 @@ export default function FinancingPage() {
     };
   }, [plans, getPlanStats, currentYearMonth, todayStr]);
 
+  const nonCreditAccounts = useMemo(
+    () =>
+      accounts.filter(
+        (a) => !a.is_credit_card && a.account_type !== "Credit Card"
+      ),
+    [accounts]
+  );
+
+  const creditCardAccounts = useMemo(
+    () =>
+      accounts.filter(
+        (a) => a.is_credit_card || a.account_type === "Credit Card"
+      ),
+    [accounts]
+  );
+
+  // Computes a credit card's available limit:
+  // credit_limit - unpaid_financing_holds (excluding optional excludePlanId) + account_balance
+  const getCreditCardAvailableLimit = useCallback(
+    (card: Account, excludePlanId?: string | null): number => {
+      const limit = Number(card.credit_limit || 0);
+      const unpaidHolds = plans.reduce((sum, p) => {
+        if (
+          !p.is_active ||
+          p.status !== "active" ||
+          p.account_id !== card.account_id ||
+          (excludePlanId && p.financing_id === excludePlanId)
+        ) {
+          return sum;
+        }
+        const stats = getPlanStats(p);
+        if (stats.isFullySettled) return sum;
+        return round2(sum + stats.remaining);
+      }, 0);
+      return Math.max(0, round2(limit - unpaidHolds + card.account_balance));
+    },
+    [plans, getPlanStats]
+  );
+
   // Filtered plans
   const filteredPlans = useMemo(() => {
     return plans.filter((p) => {
@@ -826,6 +878,9 @@ export default function FinancingPage() {
     setFormStartDate(getTodayDateString());
     setFormRealignDates(true);
     setFormSyncCommitments(false);
+    const defaultCC = creditCardAccounts[0] || null;
+    setFormLinkCreditCard(Boolean(defaultCC));
+    setFormCreditCardId(defaultCC ? defaultCC.account_id : "");
     setFormNotes("");
     setPlanModalError(null);
     setPlanModalOpen(true);
@@ -868,14 +923,19 @@ export default function FinancingPage() {
     setFormStartDate(plan.start_date);
     setFormRealignDates(true);
     setFormSyncCommitments(plan.sync_to_commitments);
+    const defaultCC = creditCardAccounts[0] || null;
+    setFormLinkCreditCard(Boolean(plan.account_id));
+    setFormCreditCardId(
+      plan.account_id || (defaultCC ? defaultCC.account_id : "")
+    );
     setFormNotes(plan.financing_notes || "");
     setPlanModalError(null);
     setPlanModalOpen(true);
   };
 
-  // Bi-directional calculations for Plan modal inputs (with normal decimal support)
+  // Bi-directional calculations for Plan modal inputs (with cents auto-formatting)
   const handleMonthlyInputChange = (rawVal: string) => {
-    const cleaned = cleanDecimalInput(rawVal);
+    const cleaned = formatCentsInput(rawVal);
     setFormMonthlyInput(cleaned);
     const monthly = parseFloat(cleaned);
     const duration = parseInt(formDurationInput, 10);
@@ -885,7 +945,7 @@ export default function FinancingPage() {
   };
 
   const handleTotalInputChange = (rawVal: string) => {
-    const cleaned = cleanDecimalInput(rawVal);
+    const cleaned = formatCentsInput(rawVal);
     setFormTotalInput(cleaned);
     const total = parseFloat(cleaned);
     const duration = parseInt(formDurationInput, 10);
@@ -960,6 +1020,47 @@ export default function FinancingPage() {
       return;
     }
 
+    // Credit Card link validation
+    let linkedCardId: string | null = null;
+    if (formCategory === "Credit Card" && formLinkCreditCard) {
+      if (!formCreditCardId) {
+        setPlanModalError(
+          "Please select a Credit Card account to link, or untick the link option."
+        );
+        return;
+      }
+      const chosenCard = creditCardAccounts.find(
+        (c) => c.account_id === formCreditCardId
+      );
+      if (!chosenCard) {
+        setPlanModalError("Selected Credit Card account was not found.");
+        return;
+      }
+      const paidAlready = editingPlan
+        ? round2(
+            editingPlan.installments
+              .filter((i) => i.status === "paid")
+              .reduce((sum, i) => sum + i.amount_paid, 0)
+          )
+        : 0;
+      const unpaidPortion = Math.max(0, round2(totalAmount - paidAlready));
+      const availableLimit = getCreditCardAvailableLimit(
+        chosenCard,
+        editingPlan ? editingPlan.financing_id : null
+      );
+      if (unpaidPortion > availableLimit) {
+        setPlanModalError(
+          `Remaining installment balance (RM ${formatAmount(
+            unpaidPortion
+          )}) exceeds ${chosenCard.account_name}'s available credit limit (RM ${formatAmount(
+            availableLimit
+          )}).`
+        );
+        return;
+      }
+      linkedCardId = chosenCard.account_id;
+    }
+
     setSavingPlan(true);
     try {
       if (!editingPlan) {
@@ -977,6 +1078,7 @@ export default function FinancingPage() {
             sync_to_commitments: formSyncCommitments,
             status: "active",
             financing_notes: formNotes.trim() || null,
+            account_id: linkedCardId,
           })
           .select("*")
           .single();
@@ -1051,6 +1153,7 @@ export default function FinancingPage() {
             sync_to_commitments: formSyncCommitments,
             status: newStatus,
             financing_notes: formNotes.trim() || null,
+            account_id: linkedCardId,
           })
           .eq("financing_id", editingPlan.financing_id)
           .eq("user_id", userId);
@@ -1206,6 +1309,56 @@ export default function FinancingPage() {
 
     const targetParts = editInstDueDate.slice(0, 10).split("-").map(Number);
     const targetDay = targetParts.length === 3 ? targetParts[2] : null;
+
+    if (selectedPlan.account_id) {
+      const linkedCard = creditCardAccounts.find(
+        (c) => c.account_id === selectedPlan.account_id
+      );
+      if (linkedCard) {
+        const paidSum = round2(
+          selectedPlan.installments
+            .filter((i) => i.status === "paid")
+            .reduce((sum, i) => sum + i.amount_paid, 0)
+        );
+        const newPendingSum = round2(
+          selectedPlan.installments
+            .filter((i) => i.status === "pending")
+            .reduce((sum, i) => {
+              if (i.installment_id === editingInstallment.installment_id) {
+                return sum + newAmountDue;
+              }
+              if (
+                editInstApplyToFuture &&
+                i.installment_number > editingInstallment.installment_number
+              ) {
+                return sum + newAmountDue;
+              }
+              return sum + i.amount_due;
+            }, 0)
+        );
+        const projectedTotal = editInstSyncTotal
+          ? round2(paidSum + newPendingSum)
+          : selectedPlan.total_amount;
+        const projectedUnpaidHold = Math.max(
+          round2(Math.max(0, projectedTotal - paidSum)),
+          newPendingSum
+        );
+        const availLimit = getCreditCardAvailableLimit(
+          linkedCard,
+          selectedPlan.financing_id
+        );
+        if (projectedUnpaidHold > availLimit + 0.001) {
+          setEditInstError(
+            `Updated unpaid installment balance (RM ${formatAmount(
+              projectedUnpaidHold
+            )}) exceeds ${linkedCard.account_name}'s available credit limit (RM ${formatAmount(
+              availLimit
+            )}).`
+          );
+          return;
+        }
+      }
+    }
 
     setSavingInstallmentEdit(true);
     try {
@@ -1397,6 +1550,48 @@ export default function FinancingPage() {
       return;
     }
 
+    if (selectedPlan.account_id) {
+      const linkedCard = creditCardAccounts.find(
+        (c) => c.account_id === selectedPlan.account_id
+      );
+      if (linkedCard) {
+        const paidSum = round2(
+          selectedPlan.installments
+            .filter((i) => i.status === "paid")
+            .reduce((sum, i) => sum + i.amount_paid, 0)
+        );
+        const currentPendingSum = round2(
+          selectedPlan.installments
+            .filter((i) => i.status === "pending")
+            .reduce((sum, i) => sum + i.amount_due, 0)
+        );
+        const newPendingSum = round2(currentPendingSum + amtDue);
+        const projectedTotal = newMonthAddToTotal
+          ? round2(selectedPlan.total_amount + amtDue)
+          : selectedPlan.total_amount;
+        const projectedUnpaidHold = Math.max(
+          round2(Math.max(0, projectedTotal - paidSum)),
+          newPendingSum
+        );
+        const availLimit = getCreditCardAvailableLimit(
+          linkedCard,
+          selectedPlan.financing_id
+        );
+        if (projectedUnpaidHold > availLimit + 0.001) {
+          setAddMonthError(
+            `Adding RM ${formatAmount(
+              amtDue
+            )} brings the unpaid installment balance to RM ${formatAmount(
+              projectedUnpaidHold
+            )}, which exceeds ${linkedCard.account_name}'s available credit limit (RM ${formatAmount(
+              availLimit
+            )}).`
+          );
+          return;
+        }
+      }
+    }
+
     setSavingNewMonth(true);
     try {
       const nextNum =
@@ -1459,6 +1654,16 @@ export default function FinancingPage() {
   // Delete an unpaid installment row
   const handleDeletePendingInstallment = async (inst: FinancingInstallment) => {
     if (!userId || !selectedPlan || inst.status === "paid") return;
+    if (
+      inst.installment_notes &&
+      /\[Cascaded from #\d+: RM [0-9.]+\]/.test(inst.installment_notes)
+    ) {
+      showToast(
+        `Month #${inst.installment_number} has a cascaded balance reduction. Revert the source installment payment first before deleting this row.`,
+        "danger"
+      );
+      return;
+    }
     try {
       const { error } = await supabase
         .from("financing_installments")
@@ -1468,22 +1673,36 @@ export default function FinancingPage() {
 
       if (error) throw error;
 
-      // Re-sequence remaining active installments and recalculate total if needed
+      // Recalculate total cleanly from remaining active installments
       const remaining = selectedPlan.installments.filter(
         (i) => i.installment_id !== inst.installment_id
       );
-      const newTotal = Math.max(
-        0,
-        round2(selectedPlan.total_amount - inst.amount_due)
+      const paidSum = round2(
+        remaining
+          .filter((i) => i.status === "paid")
+          .reduce((s, i) => s + i.amount_paid, 0)
       );
+      const pendingSum = round2(
+        remaining
+          .filter((i) => i.status === "pending")
+          .reduce((s, i) => s + i.amount_due, 0)
+      );
+      const newTotal = round2(paidSum + pendingSum);
       const newDuration =
         selectedPlan.duration_months !== null ? remaining.length : null;
+      const hasPaid = remaining.some((i) => i.status === "paid");
+      const hasPending = remaining.some((i) => i.status === "pending");
+      const newStatus =
+        hasPaid && !hasPending && newTotal > 0
+          ? "settled"
+          : selectedPlan.status;
 
       await supabase
         .from("financing")
         .update({
           total_amount: newTotal,
           duration_months: newDuration,
+          status: newStatus,
         })
         .eq("financing_id", selectedPlan.financing_id)
         .eq("user_id", userId);
@@ -1504,7 +1723,7 @@ export default function FinancingPage() {
     setPayDate(getTodayDateString());
     setPayAmountInput(inst.amount_due.toFixed(2));
     setPayNotes(inst.installment_notes || "");
-    const defaultAccount = accounts[0] || null;
+    const defaultAccount = nonCreditAccounts[0] || null;
     setPayReflectAccount(Boolean(defaultAccount));
     setPayAccountId(defaultAccount ? defaultAccount.account_id : "");
     setPaySubAccountId("");
@@ -1512,11 +1731,12 @@ export default function FinancingPage() {
   };
 
   const selectedPayAccount = useMemo(
-    () => accounts.find((a) => a.account_id === payAccountId) || null,
-    [accounts, payAccountId]
+    () =>
+      nonCreditAccounts.find((a) => a.account_id === payAccountId) || null,
+    [nonCreditAccounts, payAccountId]
   );
 
-  // Confirm Mark Installment Paid (with Account & Transaction sync)
+  // Confirm Mark Installment Paid (with Account & Transaction sync + Overpayment Cascading)
   const handleConfirmPayInstallment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userId || !payingInstallment || !selectedPlan) return;
@@ -1524,7 +1744,9 @@ export default function FinancingPage() {
 
     const amountToPay = round2(parseFloat(payAmountInput || "0"));
     if (isNaN(amountToPay) || amountToPay <= 0) {
-      setPayModalError("Please enter a valid payment amount greater than RM 0.00.");
+      setPayModalError(
+        "Please enter a valid payment amount greater than RM 0.00."
+      );
       return;
     }
 
@@ -1533,13 +1755,46 @@ export default function FinancingPage() {
       return;
     }
 
+    const alreadyPaidSum = round2(
+      selectedPlan.installments
+        .filter(
+          (i) =>
+            i.installment_id !== payingInstallment.installment_id &&
+            i.status === "paid"
+        )
+        .reduce((sum, i) => sum + i.amount_paid, 0)
+    );
+    const pendingRemainingSum = round2(
+      selectedPlan.installments
+        .filter((i) => i.status === "pending")
+        .reduce((sum, i) => sum + i.amount_due, 0)
+    );
+    const maxPayableForPlan = Math.max(
+      payingInstallment.amount_due,
+      round2(Math.max(0, selectedPlan.total_amount - alreadyPaidSum)),
+      pendingRemainingSum
+    );
+    if (maxPayableForPlan > 0 && amountToPay > maxPayableForPlan + 0.001) {
+      setPayModalError(
+        `Payment amount (RM ${formatAmount(
+          amountToPay
+        )}) cannot exceed the total remaining balance of this financing plan (RM ${formatAmount(
+          maxPayableForPlan
+        )}). Note: Daily credit card swipes are paid separately via "+ Pay card" on the Accounts page.`
+      );
+      return;
+    }
+
     let chosenAccount: Account | null = null;
     let chosenSub: SubAccount | null = null;
 
     if (payReflectAccount) {
-      chosenAccount = accounts.find((a) => a.account_id === payAccountId) || null;
+      chosenAccount =
+        nonCreditAccounts.find((a) => a.account_id === payAccountId) || null;
       if (!chosenAccount) {
-        setPayModalError("Please select an account to deduct this payment from.");
+        setPayModalError(
+          "Please select a cash/bank account to deduct this payment from."
+        );
         return;
       }
       if (paySubAccountId) {
@@ -1551,9 +1806,10 @@ export default function FinancingPage() {
       const available = getAvailableBalance(chosenAccount, paySubAccountId);
       if (amountToPay > available) {
         setPayModalError(
-          `Insufficient balance in ${chosenSub
-            ? `${chosenAccount.account_name} (${chosenSub.subaccount_name})`
-            : chosenAccount.account_name
+          `Insufficient balance in ${
+            chosenSub
+              ? `${chosenAccount.account_name} (${chosenSub.subaccount_name})`
+              : chosenAccount.account_name
           }. Available: RM ${formatAmount(available)}.`
         );
         return;
@@ -1606,7 +1862,7 @@ export default function FinancingPage() {
         createdTransactionId = txRow?.transaction_id || null;
       }
 
-      // Update installment row
+      // 1. Update the target installment row
       const { error: instErr } = await supabase
         .from("financing_installments")
         .update({
@@ -1623,24 +1879,87 @@ export default function FinancingPage() {
 
       if (instErr) throw instErr;
 
-      // Check if all installments on the plan are now paid
-      const otherPending = selectedPlan.installments.filter(
-        (i) =>
-          i.installment_id !== payingInstallment.installment_id &&
-          i.status === "pending"
-      );
-      const totalPaidAfter = round2(
-        selectedPlan.installments
+      // 2. Calculate total paid after this payment & cascade any excess forward
+      const totalPaidAfter = round2(alreadyPaidSum + amountToPay);
+      const isPlan100PctPaid =
+        selectedPlan.total_amount > 0 &&
+        totalPaidAfter >= round2(selectedPlan.total_amount - 0.001);
+
+      const sortedOtherPending = [
+        ...selectedPlan.installments
           .filter(
             (i) =>
               i.installment_id !== payingInstallment.installment_id &&
-              i.status === "paid"
+              i.status === "pending" &&
+              i.installment_number > payingInstallment.installment_number
           )
-          .reduce((sum, i) => sum + i.amount_paid, 0) + amountToPay
+          .sort((a, b) => a.installment_number - b.installment_number),
+        ...selectedPlan.installments
+          .filter(
+            (i) =>
+              i.installment_id !== payingInstallment.installment_id &&
+              i.status === "pending" &&
+              i.installment_number <= payingInstallment.installment_number
+          )
+          .sort((a, b) => a.installment_number - b.installment_number),
+      ];
+
+      let remainingExcess = round2(
+        Math.max(0, amountToPay - payingInstallment.amount_due)
       );
+      let stillPendingCount = sortedOtherPending.length;
+      let cascadedSettledCount = 0;
+
+      for (const nextInst of sortedOtherPending) {
+        if (isPlan100PctPaid || remainingExcess >= nextInst.amount_due - 0.001) {
+          const coveredAmt = round2(nextInst.amount_due);
+          remainingExcess = round2(Math.max(0, remainingExcess - coveredAmt));
+          const tag = `Settled early via Installment #${payingInstallment.installment_number} [Cascaded from #${payingInstallment.installment_number}: RM ${coveredAmt.toFixed(2)}]`;
+          const updatedNote = nextInst.installment_notes
+            ? `${nextInst.installment_notes} | ${tag}`
+            : tag;
+
+          const { error: cascadeErr } = await supabase
+            .from("financing_installments")
+            .update({
+              status: "paid",
+              amount_due: 0.0,
+              amount_paid: 0.0,
+              paid_at: payDate,
+              installment_notes: updatedNote,
+            })
+            .eq("installment_id", nextInst.installment_id)
+            .eq("user_id", userId);
+          if (cascadeErr) throw cascadeErr;
+
+          stillPendingCount -= 1;
+          cascadedSettledCount += 1;
+        } else if (remainingExcess > 0.001) {
+          const reducedBy = remainingExcess;
+          const newDue = round2(Math.max(0, nextInst.amount_due - reducedBy));
+          remainingExcess = 0;
+          const tag = `Reduced by RM ${formatAmount(reducedBy)} from Installment #${payingInstallment.installment_number} [Cascaded from #${payingInstallment.installment_number}: RM ${reducedBy.toFixed(2)}]`;
+          const updatedNote = nextInst.installment_notes
+            ? `${nextInst.installment_notes} | ${tag}`
+            : tag;
+
+          const { error: partialErr } = await supabase
+            .from("financing_installments")
+            .update({
+              amount_due: newDue,
+              installment_notes: updatedNote,
+            })
+            .eq("installment_id", nextInst.installment_id)
+            .eq("user_id", userId);
+          if (partialErr) throw partialErr;
+        }
+      }
+
       const newPlanTotal = Math.max(selectedPlan.total_amount, totalPaidAfter);
       const shouldSettlePlan =
-        otherPending.length === 0 && newPlanTotal > 0 && totalPaidAfter >= newPlanTotal;
+        (stillPendingCount === 0 || isPlan100PctPaid) &&
+        newPlanTotal > 0 &&
+        totalPaidAfter >= round2(newPlanTotal - 0.001);
 
       await supabase
         .from("financing")
@@ -1656,9 +1975,15 @@ export default function FinancingPage() {
       showToast(
         shouldSettlePlan
           ? `Installment #${payingInstallment.installment_number} paid! "${selectedPlan.financing_name}" is now 100% settled.`
-          : `Installment #${payingInstallment.installment_number} marked as paid (RM ${formatAmount(
-            amountToPay
-          )}).`
+          : cascadedSettledCount > 0
+            ? `Installment #${payingInstallment.installment_number} paid (RM ${formatAmount(
+                amountToPay
+              )}) · ${cascadedSettledCount} future ${
+                cascadedSettledCount === 1 ? "month" : "months"
+              } settled early!`
+            : `Installment #${payingInstallment.installment_number} marked as paid (RM ${formatAmount(
+                amountToPay
+              )}).`
       );
     } catch (err: unknown) {
       setPayModalError(
@@ -1669,10 +1994,35 @@ export default function FinancingPage() {
     }
   };
 
-  // Confirm Unpay (Revert Paid Installment back to Pending)
+  // Confirm Unpay (Revert Paid Installment back to Pending + reverse any cascaded reductions)
   const handleConfirmUnpayInstallment = async () => {
     if (!userId || !unpayingInstallment || !selectedPlan) return;
     setUnpayError(null);
+
+    if (selectedPlan.account_id && unpayingInstallment.amount_paid > 0) {
+      const linkedCard = creditCardAccounts.find(
+        (c) => c.account_id === selectedPlan.account_id
+      );
+      if (linkedCard) {
+        const remainingCardLimit = getCreditCardAvailableLimit(
+          linkedCard,
+          null
+        );
+        if (unpayingInstallment.amount_paid > remainingCardLimit + 0.001) {
+          setUnpayError(
+            `Cannot revert this installment to pending because restoring RM ${formatAmount(
+              unpayingInstallment.amount_paid
+            )} to the financing hold would exceed ${
+              linkedCard.account_name
+            }'s remaining available credit limit (RM ${formatAmount(
+              remainingCardLimit
+            )}). Pay down the card's swipe balance first.`
+          );
+          return;
+        }
+      }
+    }
+
     setUnpayingLoading(true);
 
     try {
@@ -1715,6 +2065,41 @@ export default function FinancingPage() {
           .update({ is_active: false })
           .eq("transaction_id", unpayingInstallment.transaction_id)
           .eq("user_id", userId);
+      }
+
+      // Reverse any cascaded overpayment effects on other installments in this plan
+      const cascadeTagRegex = new RegExp(
+        `(?:\\s*\\|\\s*)?(?:Settled early via Installment #${unpayingInstallment.installment_number}\\s*|Reduced by RM [0-9,.]+ from Installment #${unpayingInstallment.installment_number}\\s*)?\\[Cascaded from #${unpayingInstallment.installment_number}: RM ([0-9.]+)\\]`
+      );
+
+      for (const otherInst of selectedPlan.installments) {
+        if (
+          otherInst.installment_id === unpayingInstallment.installment_id ||
+          !otherInst.installment_notes
+        ) {
+          continue;
+        }
+        const match = otherInst.installment_notes.match(cascadeTagRegex);
+        if (match) {
+          const cascadedAmt = round2(parseFloat(match[1] || "0"));
+          const restoredDue = round2(otherInst.amount_due + cascadedAmt);
+          const cleanedNote =
+            otherInst.installment_notes.replace(cascadeTagRegex, "").trim() ||
+            null;
+          const wasSettledByCascade =
+            otherInst.status === "paid" && otherInst.amount_paid === 0;
+
+          await supabase
+            .from("financing_installments")
+            .update({
+              amount_due: restoredDue,
+              status: wasSettledByCascade ? "pending" : otherInst.status,
+              paid_at: wasSettledByCascade ? null : otherInst.paid_at,
+              installment_notes: cleanedNote,
+            })
+            .eq("installment_id", otherInst.installment_id)
+            .eq("user_id", userId);
+        }
       }
 
       const { error: instErr } = await supabase
@@ -2268,6 +2653,28 @@ export default function FinancingPage() {
                         className="d-flex align-items-center gap-2 flex-wrap"
                         onClick={(e) => e.stopPropagation()}
                       >
+                        {plan.account_id && (
+                          <span
+                            title="Linked to Credit Card in Accounts"
+                            style={{
+                              backgroundColor: "#eef2ff",
+                              color: "#1d4ed8",
+                              borderRadius: "999px",
+                              padding: "3px 10px",
+                              fontSize: "0.68rem",
+                              fontWeight: 600,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "4px",
+                            }}
+                          >
+                            <i className="bi bi-credit-card-2-front" />
+                            {accounts.find(
+                              (a) => a.account_id === plan.account_id
+                            )?.account_name || "Linked Card"}
+                          </span>
+                        )}
+
                         {plan.sync_to_commitments && (
                           <span
                             title="Synced with Commitments page"
@@ -2573,6 +2980,136 @@ export default function FinancingPage() {
                 onChange={(e) => setFormCustomProvider(e.target.value)}
                 required
               />
+            </div>
+          )}
+
+          {/* Credit Card Link Option (shown when Category === "Credit Card") */}
+          {formCategory === "Credit Card" && (
+            <div
+              style={{
+                backgroundColor: "#f6faf7",
+                border: "1px solid #cfe0d4",
+                borderRadius: "12px",
+                padding: "12px 14px",
+                marginBottom: "14px",
+              }}
+            >
+              <label style={checkboxLabelStyle}>
+                <input
+                  type="checkbox"
+                  style={checkboxInputStyle}
+                  checked={formLinkCreditCard}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setFormLinkCreditCard(checked);
+                    if (
+                      checked &&
+                      !formCreditCardId &&
+                      creditCardAccounts[0]
+                    ) {
+                      setFormCreditCardId(creditCardAccounts[0].account_id);
+                    }
+                  }}
+                />
+                <span>
+                  <strong>Link to a Credit Card in Accounts</strong> — holds
+                  this installment balance against your card&apos;s credit limit
+                </span>
+              </label>
+
+              {formLinkCreditCard && (
+                <div style={{ marginTop: "10px" }}>
+                  {creditCardAccounts.length === 0 ? (
+                    <div
+                      style={{
+                        fontSize: "0.75rem",
+                        color: "#b45309",
+                        backgroundColor: "#fffbeb",
+                        border: "1px solid #fde68a",
+                        borderRadius: "8px",
+                        padding: "8px 10px",
+                      }}
+                    >
+                      <i className="bi bi-info-circle me-1" />
+                      No Credit Card accounts found on the Accounts page yet.
+                      Add a Credit Card in Accounts first, or untick this box to
+                      track the installment standalone.
+                    </div>
+                  ) : (
+                    <>
+                      <label className="form-label fintrack-modal-label">
+                        Select Credit Card account
+                      </label>
+                      <select
+                        className="form-select fintrack-modal-input"
+                        value={formCreditCardId}
+                        onChange={(e) => setFormCreditCardId(e.target.value)}
+                        required={formLinkCreditCard}
+                      >
+                        <option value="">Choose credit card...</option>
+                        {creditCardAccounts.map((card) => {
+                          const avail = getCreditCardAvailableLimit(
+                            card,
+                            editingPlan ? editingPlan.financing_id : null
+                          );
+                          return (
+                            <option
+                              key={card.account_id}
+                              value={card.account_id}
+                            >
+                              {card.account_name} (Available limit: RM{" "}
+                              {formatAmount(avail)})
+                            </option>
+                          );
+                        })}
+                      </select>
+
+                      {(() => {
+                        const selectedCC = creditCardAccounts.find(
+                          (c) => c.account_id === formCreditCardId
+                        );
+                        const parsedTot = round2(
+                          parseFloat(formTotalInput || "0")
+                        );
+                        if (!selectedCC || parsedTot <= 0) return null;
+                        const paidSoFar = editingPlan
+                          ? round2(
+                              editingPlan.installments
+                                .filter((i) => i.status === "paid")
+                                .reduce((sum, i) => sum + i.amount_paid, 0)
+                            )
+                          : 0;
+                        const holdAmt = Math.max(
+                          0,
+                          round2(parsedTot - paidSoFar)
+                        );
+                        const availBefore = getCreditCardAvailableLimit(
+                          selectedCC,
+                          editingPlan ? editingPlan.financing_id : null
+                        );
+                        const availAfter = round2(availBefore - holdAmt);
+                        return (
+                          <div
+                            className="d-flex justify-content-between align-items-center pt-2 mt-2"
+                            style={{
+                              borderTop: "1px solid #e2ebe4",
+                              fontSize: "0.75rem",
+                              color:
+                                availAfter < 0 ? "#dc2626" : "#2e4738",
+                            }}
+                          >
+                            <span>Available credit limit after hold:</span>
+                            <strong>
+                              RM {formatAmount(availBefore)} →{" "}
+                              {formatSignedRM(availAfter)}
+                            </strong>
+                          </div>
+                        );
+                      })()}
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -3243,7 +3780,12 @@ export default function FinancingPage() {
                                       color: "#6b7f72",
                                     }}
                                   >
-                                    {inst.installment_notes}
+                                    {inst.installment_notes
+                                      .replace(
+                                        /\s*\[Cascaded from #[0-9]+: RM [0-9.]+\]/g,
+                                        ""
+                                      )
+                                      .trim()}
                                   </div>
                                 )}
                                 {inst.status === "paid" && inst.paid_at && (
@@ -3382,6 +3924,19 @@ export default function FinancingPage() {
                                       <i className="bi bi-trash3" />
                                     </button>
                                   </div>
+                                ) : inst.amount_paid === 0 &&
+                                  inst.installment_notes?.includes(
+                                    "[Cascaded from #"
+                                  ) ? (
+                                  <span
+                                    style={{
+                                      fontSize: "0.72rem",
+                                      color: "#15803d",
+                                      fontWeight: 600,
+                                    }}
+                                  >
+                                    Settled early
+                                  </span>
                                 ) : (
                                   <button
                                     type="button"
@@ -3497,7 +4052,7 @@ export default function FinancingPage() {
                 placeholder="0.00"
                 value={editInstAmountInput}
                 onChange={(e) =>
-                  setEditInstAmountInput(cleanDecimalInput(e.target.value))
+                  setEditInstAmountInput(formatCentsInput(e.target.value))
                 }
                 required
               />
@@ -3664,7 +4219,7 @@ export default function FinancingPage() {
               placeholder="0.00"
               value={newMonthAmountInput}
               onChange={(e) =>
-                setNewMonthAmountInput(cleanDecimalInput(e.target.value))
+                setNewMonthAmountInput(formatCentsInput(e.target.value))
               }
               required
             />
@@ -3776,9 +4331,10 @@ export default function FinancingPage() {
                   type="text"
                   inputMode="decimal"
                   className="form-control fintrack-modal-input"
+                  placeholder="0.00"
                   value={payAmountInput}
                   onChange={(e) =>
-                    setPayAmountInput(cleanDecimalInput(e.target.value))
+                    setPayAmountInput(formatCentsInput(e.target.value))
                   }
                   required
                 />
@@ -3794,6 +4350,55 @@ export default function FinancingPage() {
                 />
               </div>
             </div>
+
+            {/* Overpayment Cascading Preview */}
+            {(() => {
+              const typedAmt = round2(parseFloat(payAmountInput || "0"));
+              const excess = round2(typedAmt - payingInstallment.amount_due);
+              if (excess <= 0.001) return null;
+              return (
+                <div
+                  style={{
+                    backgroundColor: "#f0fdf4",
+                    border: "1px solid #bbf7d0",
+                    borderRadius: "10px",
+                    padding: "9px 12px",
+                    fontSize: "0.75rem",
+                    color: "#15803d",
+                    marginBottom: "12px",
+                  }}
+                >
+                  <i className="bi bi-lightning-charge-fill me-1" />
+                  <strong>Early / extra payment (+RM {formatAmount(excess)}):</strong>{" "}
+                  This extra amount will automatically cascade forward to reduce or settle your upcoming pending installments.
+                </div>
+              );
+            })()}
+
+            {/* Linked Credit Card Limit Release Info */}
+            {selectedPlan.account_id &&
+              (() => {
+                const linkedCC = accounts.find(
+                  (a) => a.account_id === selectedPlan.account_id
+                );
+                if (!linkedCC) return null;
+                return (
+                  <div
+                    style={{
+                      backgroundColor: "#eef2ff",
+                      border: "1px solid #c7d2fe",
+                      borderRadius: "10px",
+                      padding: "9px 12px",
+                      fontSize: "0.74rem",
+                      color: "#1e40af",
+                      marginBottom: "12px",
+                    }}
+                  >
+                    <i className="bi bi-credit-card-2-front me-1" />
+                    Linked to <strong>{linkedCC.account_name}</strong>: Paying this installment from your bank/cash account will automatically release the paid amount back to your card&apos;s available credit limit. (Pay any normal card swipes separately via <strong>Pay card</strong> in Accounts.)
+                  </div>
+                );
+              })()}
 
             <div className="mb-3">
               <label style={checkboxLabelStyle}>
@@ -3821,7 +4426,7 @@ export default function FinancingPage() {
               >
                 <div className="mb-2">
                   <label className="form-label fintrack-modal-label">
-                    Pay from account
+                    Pay from account (non-credit card)
                   </label>
                   <select
                     className="form-select fintrack-modal-input"
@@ -3833,7 +4438,7 @@ export default function FinancingPage() {
                     required
                   >
                     <option value="">Select account...</option>
-                    {accounts.map((acc) => (
+                    {nonCreditAccounts.map((acc) => (
                       <option key={acc.account_id} value={acc.account_id}>
                         {acc.account_name} (Available: RM{" "}
                         {formatAmount(getAvailableBalance(acc, ""))})

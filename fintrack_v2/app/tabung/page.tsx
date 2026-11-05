@@ -23,6 +23,7 @@ interface Account {
   account_type: string;
   account_balance: number;
   is_active: boolean;
+  is_credit_card: boolean;
   subaccounts: SubAccount[]; // active sub-accounts only
 }
 
@@ -459,7 +460,13 @@ export default function TabungPage() {
   );
 
   const activeAccounts = useMemo(
-    () => allAccounts.filter((acc) => acc.is_active),
+    () =>
+      allAccounts.filter(
+        (acc) =>
+          acc.is_active &&
+          !acc.is_credit_card &&
+          acc.account_type !== "Credit Card"
+      ),
     [allAccounts]
   );
 
@@ -531,6 +538,9 @@ export default function TabungPage() {
         account_type: acc.account_type,
         account_balance: Number(acc.account_balance),
         is_active: acc.is_active,
+        is_credit_card: Boolean(
+          acc.is_credit_card || acc.account_type === "Credit Card"
+        ),
         subaccounts: subs.filter(
           (s) => s.account_id === acc.account_id && s.is_active
         ),

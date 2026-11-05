@@ -23,6 +23,9 @@ interface Account {
   account_name: string;
   account_type: string;
   account_balance: number;
+  is_credit_card: boolean;
+  credit_limit: number | null;
+  unpaid_financing_hold: number;
   is_active: boolean;
   subaccounts: SubAccount[];
 }
@@ -34,6 +37,8 @@ interface TransactionRecord {
   account_name: string;
   subaccount_id: string | null;
   subaccount_name: string | null;
+  target_account_id: string | null;
+  target_account_name: string | null;
   transaction_type: TransactionType;
   amount: number;
   description: string;
@@ -61,6 +66,7 @@ const EXPENSE_CATEGORIES = [
   "Debt / Lending",
   "Debt Repayment",
   "Financing / Installment",
+  "Credit Card Payment",
   "Commitment",
   "Others",
 ];
@@ -221,7 +227,13 @@ export default function TransactionPage() {
         { onConflict: "id" }
       );
 
-      const [accountsRes, subaccountsRes, transactionsRes] = await Promise.all([
+      const [
+        accountsRes,
+        subaccountsRes,
+        transactionsRes,
+        finPlanRes,
+        finAllInstRes,
+      ] = await Promise.all([
         supabase
           .from("accounts")
           .select("*")
@@ -239,6 +251,16 @@ export default function TransactionPage() {
           .eq("is_active", true)
           .order("transaction_date", { ascending: false })
           .order("transaction_time", { ascending: false }),
+        supabase
+          .from("financing")
+          .select("*")
+          .eq("user_id", user.id)
+          .eq("is_active", true),
+        supabase
+          .from("financing_installments")
+          .select("*")
+          .eq("user_id", user.id)
+          .eq("is_active", true),
       ]);
 
       if (accountsRes.error) throw accountsRes.error;
@@ -248,6 +270,29 @@ export default function TransactionPage() {
       const rawAccounts = accountsRes.data || [];
       const rawSubs = subaccountsRes.data || [];
       const rawTxs = transactionsRes.data || [];
+      const rawFinPlans = finPlanRes.data || [];
+      const rawFinInsts = finAllInstRes.data || [];
+
+      const holdByAccountId = new Map<string, number>();
+      rawFinPlans.forEach((p) => {
+        if (!p.account_id || p.status !== "active") return;
+        const paidSum = rawFinInsts
+          .filter(
+            (i) => i.financing_id === p.financing_id && i.status === "paid"
+          )
+          .reduce((sum, i) => sum + Number(i.amount_paid || 0), 0);
+        const rem = Math.max(
+          0,
+          Math.round((Number(p.total_amount || 0) - paidSum) * 100) / 100
+        );
+        if (rem > 0) {
+          holdByAccountId.set(
+            p.account_id,
+            Math.round(((holdByAccountId.get(p.account_id) || 0) + rem) * 100) /
+              100
+          );
+        }
+      });
 
       const accountMap = new Map<string, string>();
       rawAccounts.forEach((acc) => {
@@ -262,6 +307,14 @@ export default function TransactionPage() {
       const mergedAccounts: Account[] = rawAccounts.map((acc) => ({
         ...acc,
         account_balance: Number(acc.account_balance),
+        is_credit_card: Boolean(
+          acc.is_credit_card || acc.account_type === "Credit Card"
+        ),
+        credit_limit:
+          acc.credit_limit !== null && acc.credit_limit !== undefined
+            ? Number(acc.credit_limit)
+            : null,
+        unpaid_financing_hold: holdByAccountId.get(acc.account_id) || 0,
         subaccounts: rawSubs
           .filter((sub) => sub.account_id === acc.account_id && sub.is_active)
           .map((sub) => ({
@@ -278,6 +331,10 @@ export default function TransactionPage() {
         subaccount_id: tx.subaccount_id,
         subaccount_name: tx.subaccount_id
           ? subAccountMap.get(tx.subaccount_id) || null
+          : null,
+        target_account_id: tx.target_account_id || null,
+        target_account_name: tx.target_account_id
+          ? accountMap.get(tx.target_account_id) || "Credit Card"
           : null,
         transaction_type: tx.transaction_type as TransactionType,
         amount: Number(tx.amount),
@@ -354,29 +411,17 @@ export default function TransactionPage() {
         setDebtLinks(dLinks);
       }
 
-      // Load linked Financing installments for transactions
-      const [finInstRes, finPlanRes] = await Promise.all([
-        supabase
-          .from("financing_installments")
-          .select("transaction_id, financing_id, installment_number")
-          .eq("user_id", user.id)
-          .eq("is_active", true)
-          .not("transaction_id", "is", null),
-        supabase
-          .from("financing")
-          .select("financing_id, financing_name, financing_provider")
-          .eq("user_id", user.id),
-      ]);
-      if (!finInstRes.error && !finPlanRes.error) {
+      // Build linked Financing installments map from already-fetched financing data
+      if (!finAllInstRes.error && !finPlanRes.error) {
         const planMap = new Map<string, string>();
-        (finPlanRes.data || []).forEach((p) => {
+        rawFinPlans.forEach((p) => {
           planMap.set(
             p.financing_id,
             `${p.financing_name} (${p.financing_provider})`
           );
         });
         const fLinks: Record<string, string> = {};
-        (finInstRes.data || []).forEach((inst) => {
+        rawFinInsts.forEach((inst) => {
           if (inst.transaction_id) {
             const pLabel = planMap.get(inst.financing_id) || "Financing";
             fLinks[inst.transaction_id] = `${pLabel} — Installment #${inst.installment_number}`;
@@ -502,20 +547,37 @@ export default function TransactionPage() {
   }, [transactions, searchQuery, selectedMonth, selectedYear, selectedType, sortBy]);
 
   // Summary Totals for Filtered Transactions
-  const { filteredInflow, filteredOutflow, netAmount } = useMemo(() => {
+  const {
+    filteredInflow,
+    filteredOutflow,
+    cardSettlementOutflow,
+    netAmount,
+  } = useMemo(() => {
     let inflow = 0;
-    let outflow = 0;
+    let spendingOutflow = 0;
+    let ccSettlement = 0;
     filteredTransactions.forEach((tx) => {
       if (tx.transaction_type === "income") {
         inflow += tx.amount;
+      } else if (
+        tx.expense_category === "Credit Card Payment" ||
+        Boolean(tx.target_account_id)
+      ) {
+        ccSettlement += tx.amount;
       } else {
-        outflow += tx.amount;
+        spendingOutflow += tx.amount;
       }
     });
+    // If the user filtered specifically to only Credit Card Payment rows, show that total;
+    // otherwise exclude card bill settlements from spending outflow so card swipes are never double-counted.
+    const effectiveOutflow =
+      spendingOutflow === 0 && ccSettlement > 0 ? ccSettlement : spendingOutflow;
     return {
       filteredInflow: inflow,
-      filteredOutflow: outflow,
-      netAmount: inflow - outflow,
+      filteredOutflow: effectiveOutflow,
+      cardSettlementOutflow:
+        spendingOutflow > 0 && ccSettlement > 0 ? ccSettlement : 0,
+      netAmount: inflow - effectiveOutflow,
     };
   }, [filteredTransactions]);
 
@@ -528,8 +590,37 @@ export default function TransactionPage() {
   // Available and unallocated balance breakdown for modal
   const modalAccountInfo = useMemo(() => {
     if (!selectedModalAccount) {
-      return { allocatedSum: 0, unallocated: 0, currentAvailable: 0 };
+      return {
+        allocatedSum: 0,
+        unallocated: 0,
+        currentAvailable: 0,
+        isCreditCard: false,
+      };
     }
+    const isCreditCard = Boolean(
+      selectedModalAccount.is_credit_card ||
+        selectedModalAccount.account_type === "Credit Card"
+    );
+    if (isCreditCard) {
+      const limit = Number(selectedModalAccount.credit_limit || 0);
+      const hold = Number(selectedModalAccount.unpaid_financing_hold || 0);
+      const availCredit = Math.max(
+        0,
+        Math.round(
+          (limit - hold + selectedModalAccount.account_balance) * 100
+        ) / 100
+      );
+      const maxRefundable = Math.abs(
+        Math.min(0, selectedModalAccount.account_balance)
+      );
+      return {
+        allocatedSum: 0,
+        unallocated: 0,
+        currentAvailable: txType === "expense" ? availCredit : maxRefundable,
+        isCreditCard: true,
+      };
+    }
+
     const allocatedSum = selectedModalAccount.subaccounts.reduce(
       (sum, s) => sum + Number(s.subaccount_value),
       0
@@ -550,8 +641,13 @@ export default function TransactionPage() {
         currentAvailable = unallocated;
       }
     }
-    return { allocatedSum, unallocated, currentAvailable };
-  }, [selectedModalAccount, txSubAccountId]);
+    return {
+      allocatedSum,
+      unallocated,
+      currentAvailable,
+      isCreditCard: false,
+    };
+  }, [selectedModalAccount, txSubAccountId, txType]);
 
   // Open Add Transaction Modal
   const openAddTransactionModal = () => {
@@ -659,54 +755,95 @@ export default function TransactionPage() {
     const selectedSub =
       parentAcc.subaccounts.find((s) => s.subaccount_id === txSubAccountId) || null;
 
-    // Selected Account available & unallocated balance calculation
-    const allocatedSum = parentAcc.subaccounts.reduce(
-      (sum, s) => sum + Number(s.subaccount_value),
-      0
+    const isCreditCard = Boolean(
+      parentAcc.is_credit_card || parentAcc.account_type === "Credit Card"
     );
-    const unallocatedBalance = Number((parentAcc.account_balance - allocatedSum).toFixed(2));
 
-    // Validate sub-account / unallocated balance on expense
-    if (txType === "expense") {
-      if (selectedSub) {
-        if (roundedAmount > selectedSub.subaccount_value + 0.001) {
+    if (isCreditCard) {
+      const limit = Number(parentAcc.credit_limit || 0);
+      const hold = Number(parentAcc.unpaid_financing_hold || 0);
+      const availCredit = Math.max(
+        0,
+        Math.round((limit - hold + parentAcc.account_balance) * 100) / 100
+      );
+      if (txType === "expense") {
+        if (roundedAmount > availCredit + 0.001) {
           setAddModalError(
             `Expense amount (RM ${formatAmount(
               roundedAmount
-            )}) exceeds available balance in sub-account "${
-              selectedSub.subaccount_name
-            }" (RM ${formatAmount(selectedSub.subaccount_value)}).`
-          );
-          return;
-        }
-      } else if (parentAcc.subaccounts.length > 0) {
-        if (unallocatedBalance <= 0) {
-          setAddModalError(
-            `All funds in "${parentAcc.account_name}" are fully allocated to sub-accounts. Please select a sub-account for this expense.`
-          );
-          return;
-        }
-        if (roundedAmount > unallocatedBalance + 0.001) {
-          setAddModalError(
-            `Expense amount (RM ${formatAmount(
-              roundedAmount
-            )}) exceeds available unallocated balance in "${
+            )}) exceeds available credit limit on "${
               parentAcc.account_name
-            }" (RM ${formatAmount(Math.max(0, unallocatedBalance))}). Please select a sub-account or enter a lower amount.`
+            }" (RM ${formatAmount(availCredit)}).`
           );
           return;
         }
       } else {
-        // Account has no sub-accounts: validate directly against account balance
-        if (roundedAmount > parentAcc.account_balance + 0.001) {
+        const maxRefund = Math.abs(Math.min(0, parentAcc.account_balance));
+        if (roundedAmount > maxRefund + 0.001) {
           setAddModalError(
-            `Expense amount (RM ${formatAmount(
+            `Credit card income/refund (RM ${formatAmount(
               roundedAmount
-            )}) exceeds available balance in "${
+            )}) cannot exceed the current swipe balance owed on "${
               parentAcc.account_name
-            }" (RM ${formatAmount(parentAcc.account_balance)}).`
+            }" (RM ${formatAmount(maxRefund)}).`
           );
           return;
+        }
+      }
+    } else {
+      // Selected Account available & unallocated balance calculation
+      const allocatedSum = parentAcc.subaccounts.reduce(
+        (sum, s) => sum + Number(s.subaccount_value),
+        0
+      );
+      const unallocatedBalance = Number(
+        (parentAcc.account_balance - allocatedSum).toFixed(2)
+      );
+
+      // Validate sub-account / unallocated balance on expense
+      if (txType === "expense") {
+        if (selectedSub) {
+          if (roundedAmount > selectedSub.subaccount_value + 0.001) {
+            setAddModalError(
+              `Expense amount (RM ${formatAmount(
+                roundedAmount
+              )}) exceeds available balance in sub-account "${
+                selectedSub.subaccount_name
+              }" (RM ${formatAmount(selectedSub.subaccount_value)}).`
+            );
+            return;
+          }
+        } else if (parentAcc.subaccounts.length > 0) {
+          if (unallocatedBalance <= 0) {
+            setAddModalError(
+              `All funds in "${parentAcc.account_name}" are fully allocated to sub-accounts. Please select a sub-account for this expense.`
+            );
+            return;
+          }
+          if (roundedAmount > unallocatedBalance + 0.001) {
+            setAddModalError(
+              `Expense amount (RM ${formatAmount(
+                roundedAmount
+              )}) exceeds available unallocated balance in "${
+                parentAcc.account_name
+              }" (RM ${formatAmount(
+                Math.max(0, unallocatedBalance)
+              )}). Please select a sub-account or enter a lower amount.`
+            );
+            return;
+          }
+        } else {
+          // Account has no sub-accounts: validate directly against account balance
+          if (roundedAmount > parentAcc.account_balance + 0.001) {
+            setAddModalError(
+              `Expense amount (RM ${formatAmount(
+                roundedAmount
+              )}) exceeds available balance in "${
+                parentAcc.account_name
+              }" (RM ${formatAmount(parentAcc.account_balance)}).`
+            );
+            return;
+          }
         }
       }
     }
@@ -791,6 +928,145 @@ export default function TransactionPage() {
           ? -cancellingTx.amount
           : cancellingTx.amount;
 
+      // Guard 0a: If parentAcc is a Credit Card, ensure cancelling doesn't push balance > RM 0.00 or exceed available credit limit
+      if (
+        parentAcc &&
+        (parentAcc.is_credit_card || parentAcc.account_type === "Credit Card")
+      ) {
+        const projectedBal =
+          Math.round((parentAcc.account_balance + reverseDelta) * 100) / 100;
+        if (projectedBal > 0.001) {
+          const currentOwed = Math.abs(Math.min(0, parentAcc.account_balance));
+          setCancelModalError(
+            `Cannot cancel this card expense because "${
+              parentAcc.account_name
+            }" currently only owes RM ${formatAmount(
+              currentOwed
+            )} (the card balance was already paid down). Cancel the Credit Card Payment transaction first.`
+          );
+          setCancellingLoading(false);
+          return;
+        }
+        const limit = Number(parentAcc.credit_limit || 0);
+        const hold = Number(parentAcc.unpaid_financing_hold || 0);
+        const availCredit = Math.max(
+          0,
+          Math.round((limit - hold + parentAcc.account_balance) * 100) / 100
+        );
+        if (
+          cancellingTx.transaction_type === "income" &&
+          cancellingTx.amount > availCredit + 0.001
+        ) {
+          setCancelModalError(
+            `Cannot cancel this refund because restoring RM ${formatAmount(
+              cancellingTx.amount
+            )} onto "${
+              parentAcc.account_name
+            }" would exceed its available credit limit (RM ${formatAmount(
+              availCredit
+            )}).`
+          );
+          setCancellingLoading(false);
+          return;
+        }
+      }
+
+      // Guard 0b: If this is a "Pay card" settlement (target_account_id), ensure target card has enough available credit limit to restore the owed balance
+      if (cancellingTx.target_account_id) {
+        const targetCC = allAccounts.find(
+          (a) => a.account_id === cancellingTx.target_account_id
+        );
+        if (
+          targetCC &&
+          (targetCC.is_credit_card || targetCC.account_type === "Credit Card")
+        ) {
+          const limit = Number(targetCC.credit_limit || 0);
+          const hold = Number(targetCC.unpaid_financing_hold || 0);
+          const availCredit = Math.max(
+            0,
+            Math.round((limit - hold + targetCC.account_balance) * 100) / 100
+          );
+          if (cancellingTx.amount > availCredit + 0.001) {
+            setCancelModalError(
+              `Cannot cancel this Credit Card Payment because restoring -RM ${formatAmount(
+                cancellingTx.amount
+              )} onto "${
+                targetCC.account_name
+              }" would exceed its remaining available credit limit (RM ${formatAmount(
+                availCredit
+              )}).`
+            );
+            setCancellingLoading(false);
+            return;
+          }
+        }
+      }
+
+      // Guard 0c: If linked to a Financing installment whose parent plan is linked to a Credit Card,
+      // ensure the Credit Card has enough available credit limit to absorb the restored installment hold.
+      const { data: linkedInsts } = await supabase
+        .from("financing_installments")
+        .select("*")
+        .eq("transaction_id", cancellingTx.transaction_id)
+        .eq("user_id", userId)
+        .eq("is_active", true);
+
+      if (linkedInsts && linkedInsts.length > 0) {
+        const planIds = Array.from(
+          new Set(linkedInsts.map((i: any) => i.financing_id))
+        );
+        const { data: parentPlans } = await supabase
+          .from("financing")
+          .select("financing_id, financing_name, account_id, total_amount")
+          .in("financing_id", planIds)
+          .eq("user_id", userId);
+
+        if (parentPlans && parentPlans.length > 0) {
+          for (const plan of parentPlans) {
+            if (plan.account_id) {
+              const linkedCard = allAccounts.find(
+                (a) => a.account_id === plan.account_id
+              );
+              if (
+                linkedCard &&
+                (linkedCard.is_credit_card ||
+                  linkedCard.account_type === "Credit Card") &&
+                linkedCard.credit_limit != null
+              ) {
+                const limit = Number(linkedCard.credit_limit || 0);
+                const hold = Number(linkedCard.unpaid_financing_hold || 0);
+                const availCredit = Math.max(
+                  0,
+                  Math.round(
+                    (limit - hold + linkedCard.account_balance) * 100
+                  ) / 100
+                );
+                const restoredHoldForPlan = linkedInsts
+                  .filter((i: any) => i.financing_id === plan.financing_id)
+                  .reduce(
+                    (s: number, i: any) => s + Number(i.amount_paid || 0),
+                    0
+                  );
+
+                if (restoredHoldForPlan > availCredit + 0.001) {
+                  setCancelModalError(
+                    `Cannot cancel this installment payment because restoring RM ${formatAmount(
+                      restoredHoldForPlan
+                    )} of installment hold onto "${
+                      linkedCard.account_name
+                    }" would exceed its remaining available credit limit (RM ${formatAmount(
+                      availCredit
+                    )}).`
+                  );
+                  setCancellingLoading(false);
+                  return;
+                }
+              }
+            }
+          }
+        }
+      }
+
       // 1. Soft-delete the transaction
       const { error: txError } = await supabase
         .from("transactions")
@@ -806,6 +1082,142 @@ export default function TransactionPage() {
         .update({ is_active: false })
         .eq("transaction_id", cancellingTx.transaction_id)
         .eq("user_id", userId);
+
+      // 1c. If this transaction was a Credit Card Payment (has target_account_id), reverse the target Credit Card balance too
+      if (cancellingTx.target_account_id) {
+        const targetCC = allAccounts.find(
+          (a) => a.account_id === cancellingTx.target_account_id
+        );
+        if (targetCC) {
+          const restoredCCBalance =
+            Math.round(
+              (targetCC.account_balance - cancellingTx.amount) * 100
+            ) / 100;
+          await supabase
+            .from("accounts")
+            .update({ account_balance: restoredCCBalance })
+            .eq("account_id", targetCC.account_id)
+            .eq("user_id", userId);
+        }
+      }
+
+      // 1d. If linked to a Financing installment, revert that installment (and any cascaded installments) back to Pending
+      if (linkedInsts && linkedInsts.length > 0) {
+        for (const inst of linkedInsts) {
+          const { data: siblingInsts } = await supabase
+            .from("financing_installments")
+            .select("*")
+            .eq("financing_id", inst.financing_id)
+            .eq("user_id", userId)
+            .eq("is_active", true);
+
+          const cascadeRegex = new RegExp(
+            `(?:\\s*\\|\\s*)?(?:Settled early via Installment #${inst.installment_number}\\s*|Reduced by RM [0-9,.]+ from Installment #${inst.installment_number}\\s*)?\\[Cascaded from #${inst.installment_number}: RM ([0-9.]+)\\]`
+          );
+
+          if (siblingInsts) {
+            for (const sib of siblingInsts) {
+              if (
+                sib.installment_id === inst.installment_id ||
+                !sib.installment_notes
+              ) {
+                continue;
+              }
+              const match = sib.installment_notes.match(cascadeRegex);
+              if (match) {
+                const cascadedAmt =
+                  Math.round(parseFloat(match[1] || "0") * 100) / 100;
+                const restoredDue =
+                  Math.round((Number(sib.amount_due) + cascadedAmt) * 100) /
+                  100;
+                const cleanedNote =
+                  sib.installment_notes.replace(cascadeRegex, "").trim() ||
+                  null;
+                const wasCascadedPaid =
+                  sib.status === "paid" && Number(sib.amount_paid) === 0;
+
+                await supabase
+                  .from("financing_installments")
+                  .update({
+                    amount_due: restoredDue,
+                    status: wasCascadedPaid ? "pending" : sib.status,
+                    paid_at: wasCascadedPaid ? null : sib.paid_at,
+                    installment_notes: cleanedNote,
+                  })
+                  .eq("installment_id", sib.installment_id)
+                  .eq("user_id", userId);
+              }
+            }
+          }
+
+          await supabase
+            .from("financing_installments")
+            .update({
+              status: "pending",
+              amount_paid: 0.0,
+              paid_at: null,
+              account_id: null,
+              subaccount_id: null,
+              transaction_id: null,
+            })
+            .eq("installment_id", inst.installment_id)
+            .eq("user_id", userId);
+
+          await supabase
+            .from("financing")
+            .update({ status: "active" })
+            .eq("financing_id", inst.financing_id)
+            .eq("user_id", userId);
+        }
+      }
+
+      // 1e. If linked to a Monthly Commitment payment, revert it
+      await supabase
+        .from("commitment_payments")
+        .update({
+          is_paid: false,
+          paid_at: null,
+          account_id: null,
+          subaccount_id: null,
+          transaction_id: null,
+          is_active: false,
+        })
+        .eq("transaction_id", cancellingTx.transaction_id)
+        .eq("user_id", userId);
+
+      // 1f. If linked to a Debt record, sync debt state
+      const debtLink = debtLinks[cancellingTx.transaction_id];
+      if (debtLink) {
+        if (debtLink.kind === "settled") {
+          await supabase
+            .from("debts")
+            .update({
+              status: "pending",
+              settled_at: null,
+              settled_account_id: null,
+              settled_subaccount_id: null,
+              settled_transaction_id: null,
+            })
+            .eq("settled_transaction_id", cancellingTx.transaction_id)
+            .eq("user_id", userId);
+        } else if (debtLink.status === "pending") {
+          await supabase
+            .from("debts")
+            .update({ is_active: false })
+            .eq("transaction_id", cancellingTx.transaction_id)
+            .eq("user_id", userId);
+        } else {
+          await supabase
+            .from("debts")
+            .update({
+              account_id: null,
+              subaccount_id: null,
+              transaction_id: null,
+            })
+            .eq("transaction_id", cancellingTx.transaction_id)
+            .eq("user_id", userId);
+        }
+      }
 
       // 2. Update parent account balance
       if (parentAcc) {
@@ -858,7 +1270,13 @@ export default function TransactionPage() {
       return { balanceNow: 0, balanceAfter: 0 };
     }
     const acc = allAccounts.find((a) => a.account_id === cancellingTx.account_id);
-    const balanceNow = acc ? acc.account_balance : 0;
+    const isCc = Boolean(
+      acc && (acc.is_credit_card || acc.account_type === "Credit Card")
+    );
+    const hold = isCc && acc ? Number(acc.unpaid_financing_hold || 0) : 0;
+    const balanceNow = acc
+      ? Number((acc.account_balance - hold).toFixed(2))
+      : 0;
     const reverseDelta =
       cancellingTx.transaction_type === "income"
         ? -cancellingTx.amount
@@ -868,7 +1286,9 @@ export default function TransactionPage() {
   }, [cancellingTx, allAccounts]);
 
   const categoryOptions =
-    txType === "expense" ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
+    txType === "expense"
+      ? EXPENSE_CATEGORIES.filter((c) => c !== "Credit Card Payment")
+      : INCOME_CATEGORIES;
 
   return (
     <div>
@@ -950,6 +1370,17 @@ export default function TransactionPage() {
             >
               RM {formatAmount(filteredOutflow)}
             </div>
+            {cardSettlementOutflow > 0 && (
+              <div
+                style={{
+                  fontSize: "0.72rem",
+                  color: "#6b7f72",
+                  marginTop: "4px",
+                }}
+              >
+                Excludes RM {formatAmount(cardSettlementOutflow)} card bill settlement
+              </div>
+            )}
           </div>
         </div>
 
@@ -1718,7 +2149,11 @@ export default function TransactionPage() {
             }}
           >
             <span style={{ color: "#546e5f", fontWeight: 500 }}>
-              Available in {txSubAccountId ? "sub-account" : "main account"}:
+              {modalAccountInfo.isCreditCard
+                ? txType === "income"
+                  ? "Max refundable swipe balance:"
+                  : "Available credit limit:"
+                : `Available in ${txSubAccountId ? "sub-account" : "main account"}:`}
             </span>
             <span
               style={{
@@ -1888,6 +2323,26 @@ export default function TransactionPage() {
             Linked to Tabung &quot;
             <strong>{tabungLinks[cancellingTx.transaction_id]}</strong>&quot;.
             Cancelling this transaction will also remove that entry from the fund.
+          </div>
+        )}
+
+        {cancellingTx && cancellingTx.target_account_id && (
+          <div
+            style={{
+              backgroundColor: "#f6faf7",
+              border: "1px solid #e2ebe4",
+              color: "#2e4738",
+              borderRadius: "10px",
+              padding: "9px 12px",
+              fontSize: "0.78rem",
+              marginBottom: "14px",
+            }}
+          >
+            <i className="bi bi-credit-card me-1" />
+            Linked to Credit Card Settlement for{" "}
+            <strong>{cancellingTx.target_account_name || "Credit Card"}</strong>
+            . Cancelling this transaction will also restore the owed swipe
+            balance on that card.
           </div>
         )}
 

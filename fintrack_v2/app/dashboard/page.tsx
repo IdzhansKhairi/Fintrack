@@ -23,6 +23,8 @@ interface AccountRecord {
   account_name: string;
   account_type: string;
   account_balance: number;
+  is_credit_card?: boolean;
+  credit_limit?: number | null;
   color: string | null;
   is_active: boolean;
 }
@@ -30,6 +32,7 @@ interface AccountRecord {
 interface TransactionRecord {
   transaction_id: string;
   account_id: string;
+  target_account_id?: string | null;
   transaction_type: "income" | "expense";
   amount: number;
   description: string | null;
@@ -68,6 +71,8 @@ interface FinancingRecord {
   financing_name: string;
   financing_provider: string;
   financing_category: string;
+  total_amount: number;
+  account_id: string | null;
   sync_to_commitments: boolean;
   status: "active" | "settled";
   is_active: boolean;
@@ -108,7 +113,7 @@ interface TabungContributionRecord {
   tabung_contribution_id: string;
   tabung_id: string;
   contribution_type: "deposit" | "withdrawal";
-  amount: number;
+  tabung_contribution_amount: number;
 }
 
 interface DashboardCommitmentItem {
@@ -173,6 +178,16 @@ function getAccountTypeIcon(type: string): string {
     default:
       return "bi-wallet2";
   }
+}
+
+/**
+ * Returns true if the transaction is a credit card bill settlement ("+ Pay card")
+ * rather than new spending, so it is not double-counted in monthly expense analytics.
+ */
+function isCreditCardSettlement(tx: TransactionRecord): boolean {
+  return (
+    tx.expense_category === "Credit Card Payment" || Boolean(tx.target_account_id)
+  );
 }
 
 /**
@@ -295,7 +310,7 @@ export default function DashboardPage() {
           supabase
             .from("accounts")
             .select(
-              "account_id, account_name, account_type, account_balance, color, is_active"
+              "account_id, account_name, account_type, account_balance, is_credit_card, credit_limit, color, is_active"
             )
             .eq("user_id", user.id)
             .eq("is_active", true)
@@ -303,7 +318,7 @@ export default function DashboardPage() {
           supabase
             .from("transactions")
             .select(
-              "transaction_id, account_id, transaction_type, amount, description, expense_category, income_category, transaction_date, transaction_time, created_at"
+              "transaction_id, account_id, target_account_id, transaction_type, amount, description, expense_category, income_category, transaction_date, transaction_time, created_at"
             )
             .eq("user_id", user.id)
             .eq("is_active", true)
@@ -329,7 +344,7 @@ export default function DashboardPage() {
           supabase
             .from("financing")
             .select(
-              "financing_id, financing_name, financing_provider, financing_category, sync_to_commitments, status, is_active"
+              "financing_id, financing_name, financing_provider, financing_category, total_amount, account_id, sync_to_commitments, status, is_active"
             )
             .eq("user_id", user.id)
             .eq("is_active", true)
@@ -360,8 +375,10 @@ export default function DashboardPage() {
             .eq("is_active", true)
             .order("created_at", { ascending: true }),
           supabase
-            .from("tabung_contributions")
-            .select("tabung_contribution_id, tabung_id, contribution_type, amount")
+            .from("tabung_contribution")
+            .select(
+              "tabung_contribution_id, tabung_id, contribution_type, tabung_contribution_amount"
+            )
             .eq("user_id", user.id)
             .eq("is_active", true),
         ]);
@@ -436,12 +453,38 @@ export default function DashboardPage() {
     };
   }, []);
 
+  // 1B. Unpaid Financing Hold per Credit Card Account
+  const unpaidHoldByAccountId = useMemo(() => {
+    const paidByPlanId = new Map<string, number>();
+    for (const inst of financingInstallments) {
+      if (inst.status === "paid") {
+        const prev = paidByPlanId.get(inst.financing_id) || 0;
+        paidByPlanId.set(inst.financing_id, prev + Number(inst.amount_paid || 0));
+      }
+    }
+
+    const holdMap = new Map<string, number>();
+    for (const f of financings) {
+      if (f.status === "active" && f.account_id) {
+        const totalAmt = Number(f.total_amount || 0);
+        const paidAmt = paidByPlanId.get(f.financing_id) || 0;
+        const unpaid = Math.max(0, Number((totalAmt - paidAmt).toFixed(2)));
+        const prevHold = holdMap.get(f.account_id) || 0;
+        holdMap.set(f.account_id, Number((prevHold + unpaid).toFixed(2)));
+      }
+    }
+    return holdMap;
+  }, [financings, financingInstallments]);
+
   // 2. KPI Summary Metrics
   const kpiMetrics = useMemo(() => {
-    const totalBalance = accounts.reduce(
-      (sum, acc) => sum + Number(acc.account_balance || 0),
-      0
-    );
+    const totalBalance = accounts.reduce((sum, acc) => {
+      const rawBal = Number(acc.account_balance || 0);
+      const isCc =
+        Boolean(acc.is_credit_card) || acc.account_type === "Credit Card";
+      const hold = isCc ? Number(unpaidHoldByAccountId.get(acc.account_id) || 0) : 0;
+      return sum + (rawBal - hold);
+    }, 0);
 
     let incomeThisMonth = 0;
     let expenseThisMonth = 0;
@@ -452,10 +495,12 @@ export default function DashboardPage() {
       const amt = Number(tx.amount || 0);
       if (tx.transaction_date.startsWith(currentYmPrefix)) {
         if (tx.transaction_type === "income") incomeThisMonth += amt;
-        else if (tx.transaction_type === "expense") expenseThisMonth += amt;
+        else if (tx.transaction_type === "expense" && !isCreditCardSettlement(tx))
+          expenseThisMonth += amt;
       } else if (tx.transaction_date.startsWith(prevYmPrefix)) {
         if (tx.transaction_type === "income") incomeLastMonth += amt;
-        else if (tx.transaction_type === "expense") expenseLastMonth += amt;
+        else if (tx.transaction_type === "expense" && !isCreditCardSettlement(tx))
+          expenseLastMonth += amt;
       }
     }
 
@@ -485,7 +530,13 @@ export default function DashboardPage() {
       incomePctChange,
       expensePctChange,
     };
-  }, [accounts, transactions, currentYmPrefix, prevYmPrefix]);
+  }, [
+    accounts,
+    unpaidHoldByAccountId,
+    transactions,
+    currentYmPrefix,
+    prevYmPrefix,
+  ]);
 
   // 3. Last 7 Months Cashflow Data for Recharts AreaChart
   const cashflowChartData = useMemo(() => {
@@ -519,7 +570,10 @@ export default function DashboardPage() {
         const amt = Number(tx.amount || 0);
         if (tx.transaction_type === "income") {
           bucket.income += amt;
-        } else if (tx.transaction_type === "expense") {
+        } else if (
+          tx.transaction_type === "expense" &&
+          !isCreditCardSettlement(tx)
+        ) {
           bucket.expense += amt;
         }
       }
@@ -599,11 +653,12 @@ export default function DashboardPage() {
         ? Number(inst.amount_paid ?? inst.amount_due ?? 0)
         : Number(inst.amount_due || 0);
       const dueDay = Number(inst.due_date.split("-")[2]) || 31;
+      const settledEarlySuffix = isPaid && amount === 0 ? " (Settled early)" : "";
 
       items.push({
         id: `financing-inst-${inst.installment_id}`,
         name: parentPlan.financing_name,
-        subtitle: `${parentPlan.financing_provider} · Installment #${inst.installment_number}`,
+        subtitle: `${parentPlan.financing_provider} · Installment #${inst.installment_number}${settledEarlySuffix}`,
         amount,
         status: isPaid ? "Paid" : "Unpaid",
         dueDay,
@@ -641,7 +696,7 @@ export default function DashboardPage() {
 
     for (const contrib of tabungContributions) {
       const current = netSavedMap.get(contrib.tabung_id) || 0;
-      const amt = Number(contrib.amount || 0);
+      const amt = Number(contrib.tabung_contribution_amount || 0);
       if (contrib.contribution_type === "deposit") {
         netSavedMap.set(contrib.tabung_id, current + amt);
       } else if (contrib.contribution_type === "withdrawal") {
@@ -1171,9 +1226,29 @@ export default function DashboardPage() {
                 }}
               >
                 {accounts.map((acc) => {
-                  const bal = Number(acc.account_balance || 0);
+                  const rawBal = Number(acc.account_balance || 0);
+                  const isCc =
+                    Boolean(acc.is_credit_card) ||
+                    acc.account_type === "Credit Card";
+                  const hold = isCc
+                    ? Number(unpaidHoldByAccountId.get(acc.account_id) || 0)
+                    : 0;
+                  const bal = Number((rawBal - hold).toFixed(2));
                   const isNegative = bal < 0;
                   const badgeColor = acc.color || "#2563eb";
+                  const availLimit =
+                    isCc && acc.credit_limit != null
+                      ? Math.max(
+                          0,
+                          Number(
+                            (
+                              Number(acc.credit_limit) -
+                              Math.abs(Math.min(0, rawBal)) -
+                              hold
+                            ).toFixed(2)
+                          )
+                        )
+                      : null;
 
                   return (
                     <div
@@ -1226,6 +1301,9 @@ export default function DashboardPage() {
                             }}
                           >
                             {acc.account_type}
+                            {availLimit !== null
+                              ? ` · Avail: RM ${formatRM(availLimit)}`
+                              : ""}
                           </div>
                         </div>
                       </div>

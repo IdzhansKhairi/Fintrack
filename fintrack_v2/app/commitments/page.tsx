@@ -20,6 +20,9 @@ interface Account {
   account_name: string;
   account_type: string;
   account_balance: number;
+  is_credit_card: boolean;
+  credit_limit: number | null;
+  unpaid_financing_hold: number;
   is_active: boolean;
   subaccounts: SubAccount[];
 }
@@ -84,6 +87,7 @@ interface LinkedFinancingPlan {
   start_date: string;
   sync_to_commitments: boolean;
   status: "active" | "settled";
+  account_id: string | null;
   installments: LinkedFinancingInstallment[];
 }
 
@@ -273,6 +277,11 @@ function getUnallocated(account: Account): number {
 }
 
 function getAvailableBalance(account: Account, subaccountId: string): number {
+  if (account.is_credit_card) {
+    const limit = Number(account.credit_limit || 0);
+    const hold = Number(account.unpaid_financing_hold || 0);
+    return Math.max(0, round2(limit - hold + account.account_balance));
+  }
   if (subaccountId) {
     const sub = account.subaccounts.find(
       (s) => s.subaccount_id === subaccountId
@@ -493,7 +502,6 @@ export default function CommitmentsPage() {
           .select("*")
           .eq("user_id", user.id)
           .eq("is_active", true)
-          .eq("sync_to_commitments", true)
           .order("created_at", { ascending: true }),
         supabase
           .from("financing_installments")
@@ -524,22 +532,60 @@ export default function CommitmentsPage() {
       if (subaccountsRes.error) throw subaccountsRes.error;
 
       const rawSubs = subaccountsRes.data || [];
-      const mergedAccounts: Account[] = (accountsRes.data || []).map((acc) => ({
-        account_id: acc.account_id,
-        account_name: acc.account_name,
-        account_type: acc.account_type,
-        account_balance: Number(acc.account_balance),
-        is_active: acc.is_active,
-        subaccounts: rawSubs
-          .filter((s) => s.account_id === acc.account_id)
-          .map((s) => ({
-            subaccount_id: s.subaccount_id,
-            account_id: s.account_id,
-            subaccount_name: s.subaccount_name,
-            subaccount_value: Number(s.subaccount_value),
-            is_active: s.is_active,
-          })),
-      }));
+      const rawFinRows = finRes.data || [];
+      const rawFinInstRows = finInstRes.data || [];
+
+      const holdByCardAccount = new Map<string, number>();
+      rawFinRows.forEach((f) => {
+        if (f.status === "active" && f.account_id) {
+          const planInsts = rawFinInstRows.filter(
+            (i) => i.financing_id === f.financing_id
+          );
+          const paidSum = planInsts
+            .filter((i) => i.status === "paid")
+            .reduce((s, i) => s + Number(i.amount_paid), 0);
+          const unpaidForPlan =
+            planInsts.length > 0
+              ? Math.max(
+                  round2(Math.max(0, Number(f.total_amount) - paidSum)),
+                  round2(
+                    planInsts
+                      .filter((i) => i.status === "pending")
+                      .reduce((s, i) => s + Number(i.amount_due), 0)
+                  )
+                )
+              : round2(Math.max(0, Number(f.total_amount)));
+          const prev = holdByCardAccount.get(f.account_id) || 0;
+          holdByCardAccount.set(f.account_id, round2(prev + unpaidForPlan));
+        }
+      });
+
+      const mergedAccounts: Account[] = (accountsRes.data || []).map((acc) => {
+        const isCredit =
+          Boolean(acc.is_credit_card) || acc.account_type === "Credit Card";
+        return {
+          account_id: acc.account_id,
+          account_name: acc.account_name,
+          account_type: acc.account_type,
+          account_balance: Number(acc.account_balance),
+          is_credit_card: isCredit,
+          credit_limit:
+            acc.credit_limit !== null && acc.credit_limit !== undefined
+              ? Number(acc.credit_limit)
+              : null,
+          unpaid_financing_hold: holdByCardAccount.get(acc.account_id) || 0,
+          is_active: acc.is_active,
+          subaccounts: rawSubs
+            .filter((s) => s.account_id === acc.account_id)
+            .map((s) => ({
+              subaccount_id: s.subaccount_id,
+              account_id: s.account_id,
+              subaccount_name: s.subaccount_name,
+              subaccount_value: Number(s.subaccount_value),
+              is_active: s.is_active,
+            })),
+        };
+      });
 
       const mappedCommitments: CommitmentRecord[] = (
         commitmentsRes.data || []
@@ -598,7 +644,9 @@ export default function CommitmentsPage() {
 
       const mappedLinkedFinancing: LinkedFinancingPlan[] = (
         finRes.data || []
-      ).map((f) => ({
+      )
+        .filter((f) => Boolean(f.sync_to_commitments))
+        .map((f) => ({
         financing_id: f.financing_id,
         user_id: f.user_id,
         financing_name: f.financing_name,
@@ -612,6 +660,7 @@ export default function CommitmentsPage() {
         start_date: f.start_date,
         sync_to_commitments: Boolean(f.sync_to_commitments),
         status: f.status as "active" | "settled",
+        account_id: f.account_id || null,
         installments: rawFinInst.filter(
           (i) => i.financing_id === f.financing_id
         ),
@@ -1038,6 +1087,14 @@ export default function CommitmentsPage() {
     setCellModalError(null);
   };
 
+  const nonCreditAccounts = useMemo(
+    () =>
+      accounts.filter(
+        (a) => !a.is_credit_card && a.account_type !== "Credit Card"
+      ),
+    [accounts]
+  );
+
   // Click handler for a Linked Financing month cell
   const handleClickFinancingCell = (
     plan: LinkedFinancingPlan,
@@ -1045,7 +1102,7 @@ export default function CommitmentsPage() {
   ) => {
     const inst = getFinancingInstallmentForMonth(plan, selectedYear, month);
     if (!inst) return;
-    const defaultAccount = accounts[0] || null;
+    const defaultAccount = nonCreditAccounts[0] || null;
 
     setActiveCellTarget({
       rowKind: "financing",
@@ -1074,9 +1131,17 @@ export default function CommitmentsPage() {
     setCellModalError(null);
   };
 
+  const eligibleCellAccounts = useMemo(() => {
+    if (activeCellTarget?.rowKind === "financing") {
+      return nonCreditAccounts;
+    }
+    return accounts;
+  }, [activeCellTarget, nonCreditAccounts, accounts]);
+
   const selectedCellAccount = useMemo(
-    () => accounts.find((a) => a.account_id === cellAccountId) || null,
-    [accounts, cellAccountId]
+    () =>
+      eligibleCellAccounts.find((a) => a.account_id === cellAccountId) || null,
+    [eligibleCellAccounts, cellAccountId]
   );
 
   // Confirm Mark Month Paid (for either Standalone Commitment OR Linked Financing)
@@ -1098,19 +1163,66 @@ export default function CommitmentsPage() {
       return;
     }
 
+    if (
+      activeCellTarget.rowKind === "financing" &&
+      activeCellTarget.financingInstallment &&
+      activeCellTarget.financingPlan
+    ) {
+      const inst = activeCellTarget.financingInstallment;
+      const plan = activeCellTarget.financingPlan;
+      const alreadyPaidSum = round2(
+        plan.installments
+          .filter(
+            (i) => i.installment_id !== inst.installment_id && i.status === "paid"
+          )
+          .reduce((sum, i) => sum + i.amount_paid, 0)
+      );
+      const pendingRemainingSum = round2(
+        plan.installments
+          .filter((i) => i.status === "pending")
+          .reduce((sum, i) => sum + i.amount_due, 0)
+      );
+      const maxPayableForPlan = Math.max(
+        inst.amount_due,
+        round2(Math.max(0, plan.total_amount - alreadyPaidSum)),
+        pendingRemainingSum
+      );
+      if (maxPayableForPlan > 0 && amountToPay > maxPayableForPlan + 0.001) {
+        setCellModalError(
+          `Payment amount (RM ${formatAmount(
+            amountToPay
+          )}) cannot exceed the total remaining balance of this financing plan (RM ${formatAmount(
+            maxPayableForPlan
+          )}). Note: Daily credit card swipes are paid separately via "+ Pay card" on the Accounts page.`
+        );
+        return;
+      }
+    }
+
     let chosenAccount: Account | null = null;
     let chosenSub: SubAccount | null = null;
 
     if (cellReflectAccount) {
       chosenAccount =
-        accounts.find((a) => a.account_id === cellAccountId) || null;
+        eligibleCellAccounts.find((a) => a.account_id === cellAccountId) ||
+        null;
       if (!chosenAccount) {
         setCellModalError(
           "Please select an account to deduct this payment from."
         );
         return;
       }
-      if (cellSubAccountId) {
+      if (
+        activeCellTarget.rowKind === "financing" &&
+        (chosenAccount.is_credit_card ||
+          chosenAccount.account_type === "Credit Card")
+      ) {
+        setCellModalError(
+          "Financing installments cannot be paid using a Credit Card. Please select a debit/bank/cash account."
+        );
+        return;
+      }
+      if (cellSubAccountId && !chosenAccount.is_credit_card) {
         chosenSub =
           chosenAccount.subaccounts.find(
             (s) => s.subaccount_id === cellSubAccountId
@@ -1118,12 +1230,18 @@ export default function CommitmentsPage() {
       }
       const available = getAvailableBalance(chosenAccount, cellSubAccountId);
       if (amountToPay > available) {
-        setCellModalError(
-          `Insufficient balance in ${chosenSub
-            ? `${chosenAccount.account_name} (${chosenSub.subaccount_name})`
-            : chosenAccount.account_name
-          }. Available: RM ${formatAmount(available)}.`
-        );
+        if (chosenAccount.is_credit_card) {
+          setCellModalError(
+            `Amount exceeds available credit limit on ${chosenAccount.account_name}. Available limit: RM ${formatAmount(available)}.`
+          );
+        } else {
+          setCellModalError(
+            `Insufficient balance in ${chosenSub
+              ? `${chosenAccount.account_name} (${chosenSub.subaccount_name})`
+              : chosenAccount.account_name
+            }. Available: RM ${formatAmount(available)}.`
+          );
+        }
         return;
       }
     }
@@ -1249,10 +1367,71 @@ export default function CommitmentsPage() {
 
         if (instErr) throw instErr;
 
-        // Check if parent financing plan is now 100% settled
-        const otherPending = plan.installments.filter(
-          (i) =>
-            i.installment_id !== inst.installment_id && i.status === "pending"
+        // Forward-cascade any overpayment across subsequent pending installments
+        const sortedSubsequentPending = plan.installments
+          .filter(
+            (i) =>
+              i.installment_id !== inst.installment_id && i.status === "pending"
+          )
+          .sort((a, b) => {
+            if (a.installment_number !== b.installment_number) {
+              return a.installment_number - b.installment_number;
+            }
+            return a.due_date.localeCompare(b.due_date);
+          });
+
+        let excess = round2(Math.max(0, amountToPay - inst.amount_due));
+        const cascadedPaidIds = new Set<string>();
+
+        if (excess > 0 && sortedSubsequentPending.length > 0) {
+          for (const nextInst of sortedSubsequentPending) {
+            if (excess <= 0) break;
+            const currentDue = round2(nextInst.amount_due);
+            if (currentDue <= 0) continue;
+
+            if (excess >= currentDue) {
+              excess = round2(excess - currentDue);
+              cascadedPaidIds.add(nextInst.installment_id);
+              const tag = `Settled early via Installment #${inst.installment_number} [Cascaded from #${inst.installment_number}: RM ${currentDue.toFixed(2)}]`;
+              const updatedNotes = nextInst.installment_notes
+                ? `${nextInst.installment_notes} | ${tag}`
+                : tag;
+
+              const { error: cascErr } = await supabase
+                .from("financing_installments")
+                .update({
+                  status: "paid",
+                  amount_due: 0.0,
+                  amount_paid: 0.0,
+                  paid_at: cellPayDate,
+                  installment_notes: updatedNotes,
+                })
+                .eq("installment_id", nextInst.installment_id)
+                .eq("user_id", userId);
+              if (cascErr) throw cascErr;
+            } else {
+              const reducedDue = round2(currentDue - excess);
+              const tag = `Reduced by RM ${formatAmount(excess)} from Installment #${inst.installment_number} [Cascaded from #${inst.installment_number}: RM ${excess.toFixed(2)}]`;
+              const updatedNotes = nextInst.installment_notes
+                ? `${nextInst.installment_notes} | ${tag}`
+                : tag;
+              excess = 0;
+
+              const { error: partErr } = await supabase
+                .from("financing_installments")
+                .update({
+                  amount_due: reducedDue,
+                  installment_notes: updatedNotes,
+                })
+                .eq("installment_id", nextInst.installment_id)
+                .eq("user_id", userId);
+              if (partErr) throw partErr;
+            }
+          }
+        }
+
+        const remainingPending = sortedSubsequentPending.filter(
+          (i) => !cascadedPaidIds.has(i.installment_id)
         );
         const totalPaidAfter = round2(
           plan.installments
@@ -1264,9 +1443,30 @@ export default function CommitmentsPage() {
         );
         const newPlanTotal = Math.max(plan.total_amount, totalPaidAfter);
         const shouldSettle =
-          otherPending.length === 0 &&
-          newPlanTotal > 0 &&
-          totalPaidAfter >= newPlanTotal;
+          (newPlanTotal > 0 && totalPaidAfter >= newPlanTotal) ||
+          (remainingPending.length === 0 &&
+            newPlanTotal > 0 &&
+            totalPaidAfter >= newPlanTotal);
+
+        if (shouldSettle && remainingPending.length > 0) {
+          for (const remInst of remainingPending) {
+            const tag = `Settled early via Installment #${inst.installment_number} [Cascaded from #${inst.installment_number}: RM ${remInst.amount_due.toFixed(2)}]`;
+            const updatedNotes = remInst.installment_notes
+              ? `${remInst.installment_notes} | ${tag}`
+              : tag;
+            await supabase
+              .from("financing_installments")
+              .update({
+                status: "paid",
+                amount_due: 0.0,
+                amount_paid: 0.0,
+                paid_at: cellPayDate,
+                installment_notes: updatedNotes,
+              })
+              .eq("installment_id", remInst.installment_id)
+              .eq("user_id", userId);
+          }
+        }
 
         await supabase
           .from("financing")
@@ -1371,6 +1571,23 @@ export default function CommitmentsPage() {
             (a) => a.account_id === payRec.account_id
           );
           if (linkedAcc) {
+            if (
+              linkedAcc.is_credit_card &&
+              round2(linkedAcc.account_balance + payRec.amount_paid) > 0.001
+            ) {
+              const currentOwed = Math.abs(
+                Math.min(0, linkedAcc.account_balance)
+              );
+              setCellModalError(
+                `Cannot revert this commitment payment because "${
+                  linkedAcc.account_name
+                }" currently only owes RM ${formatAmount(
+                  currentOwed
+                )} (the card balance was already paid down). Cancel the Credit Card Payment transaction first.`
+              );
+              setCellSaving(false);
+              return;
+            }
             await supabase
               .from("accounts")
               .update({
@@ -1421,6 +1638,28 @@ export default function CommitmentsPage() {
       ) {
         const inst = activeCellTarget.financingInstallment;
         const plan = activeCellTarget.financingPlan;
+
+        if (plan.account_id && inst.amount_paid > 0) {
+          const linkedCard = accounts.find(
+            (a) => a.account_id === plan.account_id && a.is_credit_card
+          );
+          if (linkedCard) {
+            const availCardLimit = getAvailableBalance(linkedCard, "");
+            if (inst.amount_paid > availCardLimit + 0.001) {
+              setCellModalError(
+                `Cannot revert this installment to unpaid because restoring RM ${formatAmount(
+                  inst.amount_paid
+                )} to the financing hold would exceed ${
+                  linkedCard.account_name
+                }'s remaining available credit limit (RM ${formatAmount(
+                  availCardLimit
+                )}). Pay down the card's swipe balance first.`
+              );
+              setCellSaving(false);
+              return;
+            }
+          }
+        }
 
         if (inst.account_id && inst.amount_paid > 0) {
           const linkedAcc = accounts.find(
@@ -1477,6 +1716,31 @@ export default function CommitmentsPage() {
           .eq("installment_id", inst.installment_id)
           .eq("user_id", userId);
         if (error) throw error;
+
+        // Reverse any cascaded overpayment adjustments tagged with [Cascaded from #X: RM Y]
+        const cascadeRegex = new RegExp(
+          `(?:\\s*\\|\\s*)?(?:Settled early via Installment #${inst.installment_number}\\s*|Reduced by RM [0-9,.]+ from Installment #${inst.installment_number}\\s*)?\\[Cascaded from #${inst.installment_number}: RM ([0-9.]+)\\]`
+        );
+        for (const sibling of plan.installments) {
+          if (sibling.installment_id === inst.installment_id) continue;
+          const notes = sibling.installment_notes || "";
+          const match = notes.match(cascadeRegex);
+          if (match) {
+            const restoredAmt = round2(parseFloat(match[1] || "0"));
+            const cleanedNotes = notes.replace(cascadeRegex, "").trim() || null;
+            const restoredDue = round2(sibling.amount_due + restoredAmt);
+            await supabase
+              .from("financing_installments")
+              .update({
+                status: sibling.amount_paid > 0 ? "paid" : "pending",
+                amount_due: restoredDue,
+                paid_at: sibling.amount_paid > 0 ? sibling.paid_at : null,
+                installment_notes: cleanedNotes,
+              })
+              .eq("installment_id", sibling.installment_id)
+              .eq("user_id", userId);
+          }
+        }
 
         await supabase
           .from("financing")
@@ -2754,16 +3018,32 @@ export default function CommitmentsPage() {
                         required
                       >
                         <option value="">Select account...</option>
-                        {accounts.map((acc) => (
+                        {eligibleCellAccounts.map((acc) => (
                           <option key={acc.account_id} value={acc.account_id}>
-                            {acc.account_name} (Available: RM{" "}
-                            {formatAmount(getAvailableBalance(acc, ""))})
+                            {acc.account_name} (
+                            {acc.is_credit_card
+                              ? `Available Limit: RM ${formatAmount(getAvailableBalance(acc, ""))}`
+                              : `Available: RM ${formatAmount(getAvailableBalance(acc, ""))}`}
+                            )
                           </option>
                         ))}
                       </select>
+                      {activeCellTarget.rowKind === "financing" && (
+                        <div
+                          style={{
+                            fontSize: "0.71rem",
+                            color: "#6b7f72",
+                            marginTop: "4px",
+                          }}
+                        >
+                          Credit cards are excluded for financing installment
+                          repayments.
+                        </div>
+                      )}
                     </div>
 
                     {selectedCellAccount &&
+                      !selectedCellAccount.is_credit_card &&
                       selectedCellAccount.subaccounts.length > 0 && (
                         <div className="mb-2">
                           <label className="form-label fintrack-modal-label">
@@ -2806,23 +3086,44 @@ export default function CommitmentsPage() {
                             color: "#2e4738",
                           }}
                         >
-                          <span>Balance impact:</span>
+                          <span>
+                            {selectedCellAccount.is_credit_card
+                              ? "Card balance impact:"
+                              : "Balance impact:"}
+                          </span>
                           <strong>
-                            RM{" "}
-                            {formatAmount(
-                              getAvailableBalance(
-                                selectedCellAccount,
-                                cellSubAccountId
-                              )
-                            )}{" "}
-                            →{" "}
-                            {formatSignedRM(
-                              round2(
-                                getAvailableBalance(
-                                  selectedCellAccount,
-                                  cellSubAccountId
-                                ) - parseFloat(cellAmountInput || "0")
-                              )
+                            {selectedCellAccount.is_credit_card ? (
+                              <>
+                                {formatSignedRM(
+                                  selectedCellAccount.account_balance
+                                )}{" "}
+                                →{" "}
+                                {formatSignedRM(
+                                  round2(
+                                    selectedCellAccount.account_balance -
+                                      parseFloat(cellAmountInput || "0")
+                                  )
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                RM{" "}
+                                {formatAmount(
+                                  getAvailableBalance(
+                                    selectedCellAccount,
+                                    cellSubAccountId
+                                  )
+                                )}{" "}
+                                →{" "}
+                                {formatSignedRM(
+                                  round2(
+                                    getAvailableBalance(
+                                      selectedCellAccount,
+                                      cellSubAccountId
+                                    ) - parseFloat(cellAmountInput || "0")
+                                  )
+                                )}
+                              </>
                             )}
                           </strong>
                         </div>

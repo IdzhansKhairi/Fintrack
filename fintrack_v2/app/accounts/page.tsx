@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { Card, Modal, Button } from "antd";
 import AddButton from "@/components/AddButtton";
 import ConfirmModal from "@/components/ConfirmModal";
@@ -24,6 +24,9 @@ interface Account {
   account_name: string;
   account_type: string;
   account_balance: number;
+  is_credit_card: boolean;
+  credit_limit: number | null;
+  unpaid_financing_hold: number;
   color: string;
   is_active: boolean;
   created_at: string;
@@ -53,6 +56,10 @@ const RANDOM_COLORS = [
   "#059669",
 ];
 
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 function formatAmount(amount: number): string {
   return Math.abs(amount).toLocaleString("en-MY", {
     minimumFractionDigits: 2,
@@ -81,6 +88,30 @@ function formatCentsInput(rawValue: string, allowNegative = false): string {
   return isNegative ? `-${formatted}` : formatted;
 }
 
+function getTodayDateString(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getCurrentTimeString(): string {
+  const now = new Date();
+  const hours = String(now.getHours()).padStart(2, "0");
+  const minutes = String(now.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
+
+function formatDisplayDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return "—";
+  const parts = dateStr.slice(0, 10).split("-");
+  if (parts.length === 3) {
+    return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  }
+  return dateStr;
+}
+
 function getAccountTypeIcon(type: string): string {
   switch (type) {
     case "Bank":
@@ -100,6 +131,113 @@ function getAccountTypeIcon(type: string): string {
   }
 }
 
+function getUnallocated(account: Account): number {
+  const allocated = account.subaccounts.reduce(
+    (sum, s) => sum + Number(s.subaccount_value),
+    0
+  );
+  return Math.max(0, round2(Number(account.account_balance) - allocated));
+}
+
+function getAvailableCashBalance(account: Account, subaccountId: string): number {
+  if (subaccountId) {
+    const sub = account.subaccounts.find(
+      (s) => s.subaccount_id === subaccountId
+    );
+    return sub ? Number(sub.subaccount_value) : 0;
+  }
+  if (account.subaccounts.length > 0) {
+    return getUnallocated(account);
+  }
+  return Number(account.account_balance);
+}
+
+function getCreditCardAvailableLimit(account: Account): number {
+  const limit = Number(account.credit_limit || 0);
+  const hold = Number(account.unpaid_financing_hold || 0);
+  const balance = Number(account.account_balance || 0); // <= 0 for owed swipes
+  return Math.max(0, round2(limit - hold + balance));
+}
+
+function DateInputDDMMYYYY({
+  value,
+  onChange,
+  required = false,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  required?: boolean;
+}) {
+  const pickerRef = useRef<HTMLInputElement>(null);
+
+  const openPicker = () => {
+    const el = pickerRef.current;
+    if (!el) return;
+    if (typeof el.showPicker === "function") {
+      try {
+        el.showPicker();
+        return;
+      } catch {
+        // Fallback
+      }
+    }
+    el.focus();
+    el.click();
+  };
+
+  return (
+    <div style={{ position: "relative" }}>
+      <input
+        type="text"
+        className="form-control fintrack-modal-input"
+        placeholder="DD-MM-YYYY"
+        value={value ? formatDisplayDate(value) : ""}
+        readOnly
+        required={required}
+        onClick={openPicker}
+        style={{
+          cursor: "pointer",
+          backgroundColor: "#ffffff",
+          paddingRight: "38px",
+        }}
+      />
+      <i
+        className="bi bi-calendar3"
+        onClick={openPicker}
+        style={{
+          position: "absolute",
+          right: "13px",
+          top: "50%",
+          transform: "translateY(-50%)",
+          color: "#6b7f72",
+          fontSize: "0.85rem",
+          cursor: "pointer",
+          pointerEvents: "none",
+        }}
+      />
+      <input
+        ref={pickerRef}
+        type="date"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        tabIndex={-1}
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          left: 0,
+          bottom: 0,
+          width: "1px",
+          height: "1px",
+          opacity: 0,
+          border: "none",
+          padding: 0,
+          pointerEvents: "none",
+        }}
+      />
+    </div>
+  );
+}
+
 export default function AccountsPage() {
   const supabase = createClient();
 
@@ -114,6 +252,8 @@ export default function AccountsPage() {
   const [customAccountName, setCustomAccountName] = useState<string>("");
   const [accountType, setAccountType] = useState<string>("Bank");
   const [accountBalanceInput, setAccountBalanceInput] = useState<string>("");
+  const [creditLimitInput, setCreditLimitInput] = useState<string>("");
+  const [creditOwedInput, setCreditOwedInput] = useState<string>("0.00");
   const [accountModalError, setAccountModalError] = useState<string | null>(null);
   const [savingAccount, setSavingAccount] = useState(false);
 
@@ -126,6 +266,16 @@ export default function AccountsPage() {
   const [subAccountBalanceInput, setSubAccountBalanceInput] = useState<string>("");
   const [subModalError, setSubModalError] = useState<string | null>(null);
   const [savingSubAccount, setSavingSubAccount] = useState(false);
+
+  // Pay Credit Card Modal State
+  const [payingCard, setPayingCard] = useState<Account | null>(null);
+  const [payCardAmountInput, setPayCardAmountInput] = useState<string>("");
+  const [payCardDate, setPayCardDate] = useState<string>(getTodayDateString());
+  const [payCardSourceAccId, setPayCardSourceAccId] = useState<string>("");
+  const [payCardSourceSubId, setPayCardSourceSubId] = useState<string>("");
+  const [payCardNote, setPayCardNote] = useState<string>("");
+  const [payCardError, setPayCardError] = useState<string | null>(null);
+  const [payingCardLoading, setPayingCardLoading] = useState<boolean>(false);
 
   // Delete Confirmation Modal State
   const [deletingAccount, setDeletingAccount] = useState<Account | null>(null);
@@ -149,6 +299,21 @@ export default function AccountsPage() {
     []
   );
 
+  const nonCreditAccounts = useMemo(
+    () =>
+      accounts.filter(
+        (a) => !a.is_credit_card && a.account_type !== "Credit Card"
+      ),
+    [accounts]
+  );
+
+  const selectedPayCardSourceAcc = useMemo(
+    () =>
+      nonCreditAccounts.find((a) => a.account_id === payCardSourceAccId) ||
+      null,
+    [nonCreditAccounts, payCardSourceAccId]
+  );
+
   const fetchAccounts = useCallback(async () => {
     setLoading(true);
     try {
@@ -170,30 +335,80 @@ export default function AccountsPage() {
         { onConflict: "id" }
       );
 
-      const [accountsRes, subaccountsRes] = await Promise.all([
-        supabase
-          .from("accounts")
-          .select("*")
-          .eq("user_id", user.id)
-          .eq("is_active", true)
-          .order("created_at", { ascending: true }),
-        supabase
-          .from("subaccounts")
-          .select("*")
-          .eq("user_id", user.id)
-          .eq("is_active", true)
-          .order("created_at", { ascending: true }),
-      ]);
+      const [accountsRes, subaccountsRes, financingRes, instRes] =
+        await Promise.all([
+          supabase
+            .from("accounts")
+            .select("*")
+            .eq("user_id", user.id)
+            .eq("is_active", true)
+            .order("created_at", { ascending: true }),
+          supabase
+            .from("subaccounts")
+            .select("*")
+            .eq("user_id", user.id)
+            .eq("is_active", true)
+            .order("created_at", { ascending: true }),
+          supabase
+            .from("financing")
+            .select("*")
+            .eq("user_id", user.id)
+            .eq("is_active", true),
+          supabase
+            .from("financing_installments")
+            .select("*")
+            .eq("user_id", user.id)
+            .eq("is_active", true),
+        ]);
 
       if (accountsRes.error) throw accountsRes.error;
       if (subaccountsRes.error) throw subaccountsRes.error;
 
       const rawAccounts = accountsRes.data || [];
       const rawSubs = subaccountsRes.data || [];
+      const rawPlans = financingRes.data || [];
+      const rawInsts = instRes.data || [];
+
+      // Compute unpaid financing hold per linked credit card account_id
+      const holdByAccountId = new Map<string, number>();
+      rawPlans.forEach((p) => {
+        if (!p.account_id || p.status !== "active") return;
+        const planInsts = rawInsts.filter(
+          (i) => i.financing_id === p.financing_id
+        );
+        const planPaid = planInsts
+          .filter((i) => i.status === "paid")
+          .reduce((sum, i) => sum + Number(i.amount_paid || 0), 0);
+        const remainingHold =
+          planInsts.length > 0
+            ? Math.max(
+                round2(Math.max(0, Number(p.total_amount || 0) - planPaid)),
+                round2(
+                  planInsts
+                    .filter((i) => i.status === "pending")
+                    .reduce((sum, i) => sum + Number(i.amount_due || 0), 0)
+                )
+              )
+            : round2(Math.max(0, Number(p.total_amount || 0)));
+        if (remainingHold > 0) {
+          holdByAccountId.set(
+            p.account_id,
+            round2((holdByAccountId.get(p.account_id) || 0) + remainingHold)
+          );
+        }
+      });
 
       const merged: Account[] = rawAccounts.map((acc) => ({
         ...acc,
         account_balance: Number(acc.account_balance),
+        is_credit_card: Boolean(
+          acc.is_credit_card || acc.account_type === "Credit Card"
+        ),
+        credit_limit:
+          acc.credit_limit !== null && acc.credit_limit !== undefined
+            ? Number(acc.credit_limit)
+            : null,
+        unpaid_financing_hold: holdByAccountId.get(acc.account_id) || 0,
         subaccounts: rawSubs
           .filter((sub) => sub.account_id === acc.account_id)
           .map((sub) => ({
@@ -214,9 +429,12 @@ export default function AccountsPage() {
     fetchAccounts();
   }, [fetchAccounts]);
 
-  // Combined balance across all active accounts
+  // Combined balance across all active accounts (including credit card financing holds)
   const combinedBalance = accounts.reduce(
-    (sum, acc) => sum + Number(acc.account_balance),
+    (sum, acc) =>
+      sum +
+      Number(acc.account_balance) -
+      (acc.is_credit_card ? Number(acc.unpaid_financing_hold || 0) : 0),
     0
   );
 
@@ -254,6 +472,8 @@ export default function AccountsPage() {
     setCustomAccountName("");
     setAccountType("Bank");
     setAccountBalanceInput("");
+    setCreditLimitInput("");
+    setCreditOwedInput("0.00");
     setAccountModalError(null);
     setAccountModalOpen(true);
   };
@@ -264,6 +484,12 @@ export default function AccountsPage() {
     setCustomAccountName(account.account_name);
     setAccountType(account.account_type);
     setAccountBalanceInput(Number(account.account_balance).toFixed(2));
+    setCreditLimitInput(
+      account.credit_limit !== null && account.credit_limit !== undefined
+        ? Number(account.credit_limit).toFixed(2)
+        : ""
+    );
+    setCreditOwedInput(Math.abs(Number(account.account_balance)).toFixed(2));
     setAccountModalError(null);
     setAccountModalOpen(true);
   };
@@ -281,27 +507,90 @@ export default function AccountsPage() {
       return;
     }
 
-    const parsedBalance = parseFloat(accountBalanceInput);
-    if (isNaN(parsedBalance)) {
-      setAccountModalError("Please enter a valid balance amount.");
-      return;
-    }
+    const isCC = accountType === "Credit Card";
+    let roundedBalance = 0;
+    let roundedLimit: number | null = null;
 
-    const roundedBalance = Math.round(parsedBalance * 100) / 100;
-
-    // If editing an account with sub-accounts, make sure total balance is not less than allocated sub-accounts sum
-    if (accountModalMode === "edit" && editingAccount) {
-      const allocatedSum = editingAccount.subaccounts.reduce(
-        (sum, s) => sum + Number(s.subaccount_value),
-        0
-      );
-      if (editingAccount.subaccounts.length > 0 && roundedBalance < allocatedSum - 0.001) {
+    if (isCC) {
+      if (
+        accountModalMode === "edit" &&
+        editingAccount &&
+        editingAccount.subaccounts.length > 0
+      ) {
         setAccountModalError(
-          `Account balance cannot be lower than the total already allocated in sub-accounts (RM ${formatAmount(
-            allocatedSum
-          )}).`
+          "Cannot change account type to Credit Card while it has active sub-accounts. Please remove its sub-accounts first."
         );
         return;
+      }
+
+      const parsedLimit = parseFloat(creditLimitInput);
+      if (isNaN(parsedLimit) || parsedLimit <= 0) {
+        setAccountModalError(
+          "Please enter a valid credit limit greater than RM 0.00."
+        );
+        return;
+      }
+      roundedLimit = round2(parsedLimit);
+
+      const parsedOwed = parseFloat(creditOwedInput || "0");
+      if (isNaN(parsedOwed) || parsedOwed < 0) {
+        setAccountModalError("Please enter a valid current amount owed.");
+        return;
+      }
+      const roundedOwed = round2(parsedOwed);
+      const currentHold = editingAccount
+        ? Number(editingAccount.unpaid_financing_hold || 0)
+        : 0;
+      if (roundedOwed + currentHold > roundedLimit + 0.001) {
+        setAccountModalError(
+          `Current amount owed (RM ${formatAmount(roundedOwed)})${
+            currentHold > 0
+              ? ` plus active financing holds (RM ${formatAmount(currentHold)})`
+              : ""
+          } cannot exceed the credit limit (RM ${formatAmount(roundedLimit)}).`
+        );
+        return;
+      }
+      roundedBalance = roundedOwed > 0 ? -Math.abs(roundedOwed) : 0;
+    } else {
+      if (
+        accountModalMode === "edit" &&
+        editingAccount &&
+        editingAccount.is_credit_card &&
+        Number(editingAccount.unpaid_financing_hold || 0) > 0
+      ) {
+        setAccountModalError(
+          `Cannot change account type from Credit Card while it has active linked financing installments (RM ${formatAmount(
+            Number(editingAccount.unpaid_financing_hold || 0)
+          )}). Please unlink or settle the financing plan first.`
+        );
+        return;
+      }
+
+      const parsedBalance = parseFloat(accountBalanceInput);
+      if (isNaN(parsedBalance)) {
+        setAccountModalError("Please enter a valid balance amount.");
+        return;
+      }
+      roundedBalance = round2(parsedBalance);
+
+      // If editing an account with sub-accounts, make sure total balance is not less than allocated sub-accounts sum
+      if (accountModalMode === "edit" && editingAccount) {
+        const allocatedSum = editingAccount.subaccounts.reduce(
+          (sum, s) => sum + Number(s.subaccount_value),
+          0
+        );
+        if (
+          editingAccount.subaccounts.length > 0 &&
+          roundedBalance < allocatedSum - 0.001
+        ) {
+          setAccountModalError(
+            `Account balance cannot be lower than the total already allocated in sub-accounts (RM ${formatAmount(
+              allocatedSum
+            )}).`
+          );
+          return;
+        }
       }
     }
 
@@ -316,6 +605,8 @@ export default function AccountsPage() {
           account_name: finalAccountName,
           account_type: accountType,
           account_balance: roundedBalance,
+          is_credit_card: isCC,
+          credit_limit: roundedLimit,
           color: randomColor,
           is_active: true,
         });
@@ -329,6 +620,8 @@ export default function AccountsPage() {
             account_name: finalAccountName,
             account_type: accountType,
             account_balance: roundedBalance,
+            is_credit_card: isCC,
+            credit_limit: roundedLimit,
           })
           .eq("account_id", editingAccount.account_id)
           .eq("user_id", userId);
@@ -343,6 +636,146 @@ export default function AccountsPage() {
       setAccountModalError(err.message || "Failed to save account.");
     } finally {
       setSavingAccount(false);
+    }
+  };
+
+  // ==========================================
+  // HANDLERS: PAY CREDIT CARD
+  // ==========================================
+  const handleOpenPayCard = (card: Account) => {
+    const owed = Math.abs(Math.min(0, Number(card.account_balance)));
+    setPayingCard(card);
+    setPayCardAmountInput(owed > 0 ? owed.toFixed(2) : "");
+    setPayCardDate(getTodayDateString());
+    const defaultSrc = nonCreditAccounts[0] || null;
+    setPayCardSourceAccId(defaultSrc ? defaultSrc.account_id : "");
+    setPayCardSourceSubId("");
+    setPayCardNote("");
+    setPayCardError(null);
+  };
+
+  const handleConfirmPayCard = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userId || !payingCard) return;
+    setPayCardError(null);
+
+    const amount = round2(parseFloat(payCardAmountInput || "0"));
+    if (isNaN(amount) || amount <= 0) {
+      setPayCardError("Please enter a payment amount greater than RM 0.00.");
+      return;
+    }
+
+    const maxOwed = round2(
+      Math.abs(Math.min(0, Number(payingCard.account_balance)))
+    );
+    if (amount > maxOwed + 0.001) {
+      setPayCardError(
+        `Payment amount cannot exceed the current card swipe balance owed (RM ${formatAmount(
+          maxOwed
+        )}).`
+      );
+      return;
+    }
+
+    if (!payCardDate) {
+      setPayCardError("Please select a payment date (DD-MM-YYYY).");
+      return;
+    }
+
+    const sourceAccount =
+      nonCreditAccounts.find((a) => a.account_id === payCardSourceAccId) ||
+      null;
+    if (!sourceAccount) {
+      setPayCardError("Please select a bank/cash account to pay from.");
+      return;
+    }
+
+    const sourceSub = payCardSourceSubId
+      ? sourceAccount.subaccounts.find(
+          (s) => s.subaccount_id === payCardSourceSubId
+        ) || null
+      : null;
+
+    const availableCash = getAvailableCashBalance(
+      sourceAccount,
+      payCardSourceSubId
+    );
+    if (amount > availableCash + 0.001) {
+      setPayCardError(
+        `Insufficient balance in ${
+          sourceSub
+            ? `${sourceAccount.account_name} (${sourceSub.subaccount_name})`
+            : sourceAccount.account_name
+        }. Available: RM ${formatAmount(availableCash)}.`
+      );
+      return;
+    }
+
+    setPayingCardLoading(true);
+    try {
+      // 1. Deduct from source bank/cash account
+      const newSourceBal = round2(Number(sourceAccount.account_balance) - amount);
+      const { error: srcErr } = await supabase
+        .from("accounts")
+        .update({ account_balance: newSourceBal })
+        .eq("account_id", sourceAccount.account_id)
+        .eq("user_id", userId);
+      if (srcErr) throw srcErr;
+
+      if (sourceSub) {
+        const newSubBal = round2(Number(sourceSub.subaccount_value) - amount);
+        const { error: subErr } = await supabase
+          .from("subaccounts")
+          .update({ subaccount_value: newSubBal })
+          .eq("subaccount_id", sourceSub.subaccount_id)
+          .eq("user_id", userId);
+        if (subErr) throw subErr;
+      }
+
+      // 2. Increase credit card balance toward RM 0.00
+      const newCardBal = Math.min(
+        0,
+        round2(Number(payingCard.account_balance) + amount)
+      );
+      const { error: cardErr } = await supabase
+        .from("accounts")
+        .update({ account_balance: newCardBal })
+        .eq("account_id", payingCard.account_id)
+        .eq("user_id", userId);
+      if (cardErr) throw cardErr;
+
+      // 3. Record expense transaction with target_account_id pointing to the credit card
+      const txDesc = payCardNote.trim()
+        ? `Credit Card Payment — ${payingCard.account_name} (${payCardNote.trim()})`
+        : `Credit Card Payment — ${payingCard.account_name}`;
+
+      const { error: txErr } = await supabase.from("transactions").insert({
+        user_id: userId,
+        account_id: sourceAccount.account_id,
+        subaccount_id: sourceSub ? sourceSub.subaccount_id : null,
+        target_account_id: payingCard.account_id,
+        transaction_type: "expense",
+        amount: amount,
+        description: txDesc,
+        expense_category: "Credit Card Payment",
+        income_category: null,
+        transaction_date: payCardDate,
+        transaction_time: getCurrentTimeString(),
+        is_active: true,
+      });
+      if (txErr) throw txErr;
+
+      const cardName = payingCard.account_name;
+      setPayingCard(null);
+      await fetchAccounts();
+      showToast(
+        `Paid RM ${formatAmount(amount)} to ${cardName} from ${sourceAccount.account_name}`,
+        "success"
+      );
+    } catch (err: any) {
+      setPayCardError(err.message || "Failed to process credit card payment.");
+    } finally {
+      setPayingCardLoading(false);
     }
   };
 
@@ -467,6 +900,11 @@ export default function AccountsPage() {
         supabase
           .from("subaccounts")
           .update({ is_active: false })
+          .eq("account_id", deletingAccount.account_id)
+          .eq("user_id", userId),
+        supabase
+          .from("financing")
+          .update({ account_id: null })
           .eq("account_id", deletingAccount.account_id)
           .eq("user_id", userId),
       ]);
@@ -603,7 +1041,11 @@ export default function AccountsPage() {
       ) : (
         <div className="row g-4">
           {accounts.map((account) => {
-            const hasSubAccounts = account.subaccounts.length > 0;
+            const isCreditCard = Boolean(
+              account.is_credit_card || account.account_type === "Credit Card"
+            );
+            const hasSubAccounts =
+              !isCreditCard && account.subaccounts.length > 0;
             const allocatedTotal = account.subaccounts.reduce(
               (sum, s) => sum + Number(s.subaccount_value),
               0
@@ -612,8 +1054,18 @@ export default function AccountsPage() {
               0,
               Number(account.account_balance) - allocatedTotal
             );
-            const isNegative = Number(account.account_balance) < 0;
+            const financingHold = Number(account.unpaid_financing_hold || 0);
+            const swipeBalance = Number(account.account_balance);
+            const hasSwipeDebt = swipeBalance < 0;
+            const displayedBalance = isCreditCard
+              ? round2(swipeBalance - financingHold)
+              : swipeBalance;
+            const isNegative = displayedBalance < 0;
             const badgeColor = account.color || "#1e4db7";
+            const availableCreditLimit = isCreditCard
+              ? getCreditCardAvailableLimit(account)
+              : 0;
+            const totalCreditLimit = Number(account.credit_limit || 0);
 
             return (
               <div
@@ -704,9 +1156,11 @@ export default function AccountsPage() {
                         className="text-secondary d-block"
                         style={{ fontSize: "0.73rem" }}
                       >
-                        {hasSubAccounts
-                          ? "Total account balance"
-                          : "Current balance"}
+                        {isCreditCard
+                          ? "Current balance"
+                          : hasSubAccounts
+                            ? "Total account balance"
+                            : "Current balance"}
                       </span>
                       <h4
                         className="fw-bold mt-1 mb-0"
@@ -715,11 +1169,57 @@ export default function AccountsPage() {
                           color: isNegative ? "#dc2626" : "#1a2e23",
                         }}
                       >
-                        {formatSignedRM(Number(account.account_balance))}
+                        {formatSignedRM(displayedBalance)}
                       </h4>
+
+                      {/* Credit Card Limit Subtitle & Financing Hold Breakdown */}
+                      {isCreditCard && (
+                        <div className="mt-2">
+                          <div
+                            className="d-flex justify-content-between align-items-center"
+                            style={{ fontSize: "0.75rem", color: "#4b6355" }}
+                          >
+                            <span>Available credit limit:</span>
+                            <strong style={{ color: "#1a2e23" }}>
+                              RM {formatAmount(availableCreditLimit)}
+                              {totalCreditLimit > 0
+                                ? ` / RM ${formatAmount(totalCreditLimit)}`
+                                : ""}
+                            </strong>
+                          </div>
+
+                          {financingHold > 0 && (
+                            <div
+                              className="mt-1 pt-1"
+                              style={{
+                                borderTop: "1px dashed #e2ebe4",
+                                fontSize: "0.71rem",
+                              }}
+                            >
+                              <div
+                                className="d-flex justify-content-between align-items-center"
+                                style={{ color: "#6b7f72" }}
+                              >
+                                <span>Daily swipes owed:</span>
+                                <strong>{formatSignedRM(swipeBalance)}</strong>
+                              </div>
+                              <div
+                                className="d-flex justify-content-between align-items-center mt-1"
+                                style={{ color: "#1d4ed8" }}
+                              >
+                                <span>
+                                  <i className="bi bi-lock-fill me-1" />
+                                  Held in installments:
+                                </span>
+                                <strong>-RM {formatAmount(financingHold)}</strong>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
 
-                    {/* Sub-Accounts List (if any) */}
+                    {/* Sub-Accounts List (if any, non-credit cards only) */}
                     {hasSubAccounts && (
                       <div
                         className="mt-3 rounded-3 p-2"
@@ -808,29 +1308,56 @@ export default function AccountsPage() {
                     )}
                   </div>
 
-                  {/* Add Sub-Account Button */}
+                  {/* Card Footer Action: Pay Card (for Credit Cards) OR Add Sub-Account */}
                   <div className="mt-3 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => handleOpenAddSubAccount(account)}
-                      className="btn btn-sm w-100 rounded-pill fw-medium"
-                      style={{
-                        backgroundColor: "#f9fbf5",
-                        border: "1px solid #e2ebe0",
-                        color: "#1a2e23",
-                        fontSize: "0.78rem",
-                        padding: "7px 12px",
-                        transition: "all 0.15s ease",
-                      }}
-                      onMouseEnter={(e) =>
-                        (e.currentTarget.style.backgroundColor = "#f0f4ec")
-                      }
-                      onMouseLeave={(e) =>
-                        (e.currentTarget.style.backgroundColor = "#f9fbf5")
-                      }
-                    >
-                      <i className="bi bi-plus-lg me-1" /> Add sub-account
-                    </button>
+                    {isCreditCard ? (
+                      <button
+                        type="button"
+                        disabled={!hasSwipeDebt}
+                        onClick={() => handleOpenPayCard(account)}
+                        className="btn btn-sm w-100 rounded-pill fw-medium"
+                        style={{
+                          backgroundColor: hasSwipeDebt ? "#f9fbf5" : "#f4f6f4",
+                          border: "1px solid #e2ebe0",
+                          color: hasSwipeDebt ? "#1a2e23" : "#94a39b",
+                          fontSize: "0.78rem",
+                          padding: "7px 12px",
+                          cursor: hasSwipeDebt ? "pointer" : "not-allowed",
+                          transition: "all 0.15s ease",
+                        }}
+                        title={
+                          hasSwipeDebt
+                            ? "Pay credit card swipe balance"
+                            : financingHold > 0
+                              ? "No daily swipe balance owed (pay installments via Financing page)"
+                              : "No swipe balance owed (RM 0.00)"
+                        }
+                      >
+                        <i className="bi bi-plus-lg me-1" /> Pay card
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenAddSubAccount(account)}
+                        className="btn btn-sm w-100 rounded-pill fw-medium"
+                        style={{
+                          backgroundColor: "#f9fbf5",
+                          border: "1px solid #e2ebe0",
+                          color: "#1a2e23",
+                          fontSize: "0.78rem",
+                          padding: "7px 12px",
+                          transition: "all 0.15s ease",
+                        }}
+                        onMouseEnter={(e) =>
+                          (e.currentTarget.style.backgroundColor = "#f0f4ec")
+                        }
+                        onMouseLeave={(e) =>
+                          (e.currentTarget.style.backgroundColor = "#f9fbf5")
+                        }
+                      >
+                        <i className="bi bi-plus-lg me-1" /> Add sub-account
+                      </button>
+                    )}
                   </div>
                 </Card>
               </div>
@@ -863,6 +1390,7 @@ export default function AccountsPage() {
 
           {accountModalMode === "edit" &&
             editingAccount &&
+            accountType !== "Credit Card" &&
             editingAccount.subaccounts.length > 0 && (
               <p
                 className="text-secondary mb-3"
@@ -889,46 +1417,219 @@ export default function AccountsPage() {
                 type="text"
                 value={customAccountName}
                 onChange={(e) => setCustomAccountName(e.target.value)}
-                placeholder="e.g. Maybank Islamic Current, CIMB Savings, KWSP"
+                placeholder="e.g. Maybank Islamic Current, CIMB Savings, Visa Signature"
                 className="form-control fintrack-modal-input"
                 required
               />
             </div>
 
-            {/* Type & Balance Row */}
-            <div className="row g-3 mb-3">
-              <div className="col-6">
-                <label className="fintrack-modal-label">Type</label>
-                <select
-                  value={accountType}
-                  onChange={(e) => setAccountType(e.target.value)}
-                  className="form-select fintrack-modal-input"
-                >
-                  {ACCOUNT_TYPES.map((type) => (
-                    <option key={type} value={type}>
-                      {type}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {accountType === "Credit Card" ? (
+              <>
+                <div className="row g-3 mb-3">
+                  <div className="col-6">
+                    <label className="fintrack-modal-label">Type</label>
+                    <select
+                      value={accountType}
+                      onChange={(e) => setAccountType(e.target.value)}
+                      className="form-select fintrack-modal-input"
+                    >
+                      {ACCOUNT_TYPES.map((type) => (
+                        <option key={type} value={type}>
+                          {type}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-              <div className="col-6">
-                <label className="fintrack-modal-label">Balance (RM)</label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  required
-                  value={accountBalanceInput}
-                  onChange={(e) =>
-                    setAccountBalanceInput(
-                      formatCentsInput(e.target.value, true)
-                    )
-                  }
-                  placeholder="0.00"
-                  className="form-control fintrack-modal-input"
-                />
+                  <div className="col-6">
+                    <label className="fintrack-modal-label">
+                      Credit limit (RM)
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      required
+                      value={creditLimitInput}
+                      onChange={(e) =>
+                        setCreditLimitInput(
+                          formatCentsInput(e.target.value, false)
+                        )
+                      }
+                      placeholder="e.g. 8000.00"
+                      className="form-control fintrack-modal-input"
+                    />
+                  </div>
+                </div>
+
+                <div className="mb-3">
+                  <label className="fintrack-modal-label">
+                    Current swipe amount owed (RM){" "}
+                    <span style={{ fontWeight: 400, color: "#6b7f72" }}>
+                      (defaults to 0.00)
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={creditOwedInput}
+                    onChange={(e) =>
+                      setCreditOwedInput(
+                        formatCentsInput(e.target.value, false)
+                      )
+                    }
+                    placeholder="0.00"
+                    className="form-control fintrack-modal-input"
+                  />
+                  <div
+                    style={{
+                      fontSize: "0.72rem",
+                      color: "#6b7f72",
+                      marginTop: "4px",
+                    }}
+                  >
+                    Credit cards start at <strong>RM 0.00</strong>. Enter only
+                    your unpaid <strong>daily card swipes</strong> here (linked
+                    Financing installments are tracked automatically).
+                  </div>
+                  {(() => {
+                    const parsedLimit = Math.max(
+                      0,
+                      round2(parseFloat(creditLimitInput || "0") || 0)
+                    );
+                    const parsedSwipeOwed = Math.max(
+                      0,
+                      round2(parseFloat(creditOwedInput || "0") || 0)
+                    );
+                    const activeHold =
+                      accountModalMode === "edit" && editingAccount
+                        ? round2(Number(editingAccount.unpaid_financing_hold || 0))
+                        : 0;
+                    const totalDisplayedDebt = round2(
+                      parsedSwipeOwed + activeHold
+                    );
+                    const projectedAvailLimit = Math.max(
+                      0,
+                      round2(parsedLimit - totalDisplayedDebt)
+                    );
+                    if (
+                      parsedLimit <= 0 &&
+                      parsedSwipeOwed <= 0 &&
+                      activeHold <= 0
+                    ) {
+                      return null;
+                    }
+                    return (
+                      <div
+                        style={{
+                          marginTop: "10px",
+                          padding: "10px 12px",
+                          borderRadius: "10px",
+                          backgroundColor: "#f6f8f6",
+                          border: "1px solid #e4ece6",
+                          fontSize: "0.75rem",
+                          color: "#334155",
+                        }}
+                      >
+                        <div className="d-flex justify-content-between mb-1">
+                          <span style={{ color: "#6b7f72" }}>
+                            Daily swipes owed (editable above):
+                          </span>
+                          <span
+                            style={{
+                              fontWeight: 600,
+                              color:
+                                parsedSwipeOwed > 0 ? "#dc2626" : "#1a2e23",
+                            }}
+                          >
+                            {parsedSwipeOwed > 0
+                              ? `-RM ${formatAmount(parsedSwipeOwed)}`
+                              : "RM 0.00"}
+                          </span>
+                        </div>
+                        {activeHold > 0 && (
+                          <div className="d-flex justify-content-between mb-1">
+                            <span style={{ color: "#6b7f72" }}>
+                              Active installments held (Financing):
+                            </span>
+                            <span
+                              style={{ fontWeight: 600, color: "#dc2626" }}
+                            >
+                              -RM {formatAmount(activeHold)}
+                            </span>
+                          </div>
+                        )}
+                        <div
+                          className="d-flex justify-content-between pt-1 mt-1"
+                          style={{ borderTop: "1px dashed #d5e0d8" }}
+                        >
+                          <span style={{ fontWeight: 600, color: "#1a2e23" }}>
+                            Total displayed card balance:
+                          </span>
+                          <span
+                            style={{
+                              fontWeight: 700,
+                              color:
+                                totalDisplayedDebt > 0 ? "#dc2626" : "#1a2e23",
+                            }}
+                          >
+                            {totalDisplayedDebt > 0
+                              ? `-RM ${formatAmount(totalDisplayedDebt)}`
+                              : "RM 0.00"}
+                          </span>
+                        </div>
+                        {parsedLimit > 0 && (
+                          <div className="d-flex justify-content-between mt-1">
+                            <span style={{ color: "#6b7f72" }}>
+                              Projected available credit limit:
+                            </span>
+                            <span
+                              style={{ fontWeight: 600, color: "#15803d" }}
+                            >
+                              RM {formatAmount(projectedAvailLimit)}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </>
+            ) : (
+              /* Type & Balance Row for Non-Credit Card Accounts */
+              <div className="row g-3 mb-3">
+                <div className="col-6">
+                  <label className="fintrack-modal-label">Type</label>
+                  <select
+                    value={accountType}
+                    onChange={(e) => setAccountType(e.target.value)}
+                    className="form-select fintrack-modal-input"
+                  >
+                    {ACCOUNT_TYPES.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="col-6">
+                  <label className="fintrack-modal-label">Balance (RM)</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    required
+                    value={accountBalanceInput}
+                    onChange={(e) =>
+                      setAccountBalanceInput(
+                        formatCentsInput(e.target.value, true)
+                      )
+                    }
+                    placeholder="0.00"
+                    className="form-control fintrack-modal-input"
+                  />
+                </div>
               </div>
-            </div>
+            )}
 
             {accountModalError && (
               <div
@@ -958,6 +1659,277 @@ export default function AccountsPage() {
             </div>
           </form>
         </div>
+      </Modal>
+
+      {/* =========================================================
+          MODAL 2.5: PAY CREDIT CARD MODAL
+          ========================================================= */}
+      <Modal
+        open={Boolean(payingCard)}
+        onCancel={() => !payingCardLoading && setPayingCard(null)}
+        footer={null}
+        centered
+        width={480}
+        className="fintrack-modal"
+        destroyOnHidden
+      >
+        {payingCard && (
+          <div>
+            <h3
+              className="mb-1"
+              style={{ fontSize: "1.18rem", fontWeight: 600, color: "#1a2e23" }}
+            >
+              Pay {payingCard.account_name}
+            </h3>
+            <p
+              className="text-secondary mb-3"
+              style={{ fontSize: "0.8rem", lineHeight: 1.5 }}
+            >
+              Settle your credit card swipe balance using a bank, e-wallet or
+              cash account. (Installment plans are paid from the Financing or
+              Commitments page.)
+            </p>
+
+            {payCardError && (
+              <div
+                className="alert alert-danger py-2 small mb-3"
+                role="alert"
+              >
+                {payCardError}
+              </div>
+            )}
+
+            {/* Card Summary Box */}
+            <div
+              className="rounded-3 p-3 mb-3"
+              style={{
+                backgroundColor: "#f8faf8",
+                border: "1px solid #e6ece7",
+                fontSize: "0.8rem",
+              }}
+            >
+              <div className="d-flex justify-content-between align-items-center mb-1">
+                <span className="text-secondary">Current swipe balance:</span>
+                <strong style={{ color: "#dc2626" }}>
+                  {formatSignedRM(Number(payingCard.account_balance))}
+                </strong>
+              </div>
+              <div className="d-flex justify-content-between align-items-center">
+                <span className="text-secondary">Available credit limit:</span>
+                <strong style={{ color: "#1a2e23" }}>
+                  RM {formatAmount(getCreditCardAvailableLimit(payingCard))}
+                  {payingCard.credit_limit
+                    ? ` / RM ${formatAmount(Number(payingCard.credit_limit))}`
+                    : ""}
+                </strong>
+              </div>
+            </div>
+
+            <form onSubmit={handleConfirmPayCard}>
+              {/* Amount & Date Row */}
+              <div className="row g-2 mb-3">
+                <div className="col-12 col-sm-6">
+                  <div className="d-flex justify-content-between align-items-center mb-1">
+                    <label className="fintrack-modal-label mb-0">
+                      Amount to pay (RM)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPayCardAmountInput(
+                          Math.abs(Number(payingCard.account_balance)).toFixed(
+                            2
+                          )
+                        )
+                      }
+                      className="btn btn-sm py-0 px-2 rounded-pill"
+                      style={{
+                        fontSize: "0.68rem",
+                        backgroundColor: "#e8f3ec",
+                        color: "#4a7d5e",
+                        fontWeight: 600,
+                        border: "none",
+                      }}
+                    >
+                      Full
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    required
+                    value={payCardAmountInput}
+                    onChange={(e) =>
+                      setPayCardAmountInput(
+                        formatCentsInput(e.target.value, false)
+                      )
+                    }
+                    placeholder="0.00"
+                    className="form-control fintrack-modal-input"
+                  />
+                </div>
+
+                <div className="col-12 col-sm-6">
+                  <label className="fintrack-modal-label">
+                    Payment date (DD-MM-YYYY)
+                  </label>
+                  <DateInputDDMMYYYY
+                    value={payCardDate}
+                    onChange={setPayCardDate}
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Source Account & Optional Sub-Account */}
+              <div
+                style={{
+                  backgroundColor: "#f6faf7",
+                  border: "1px solid #e2ebe4",
+                  borderRadius: "12px",
+                  padding: "12px 14px",
+                  marginBottom: "14px",
+                }}
+              >
+                <div className="mb-2">
+                  <label className="fintrack-modal-label">
+                    Pay from account (non-credit card)
+                  </label>
+                  <select
+                    className="form-select fintrack-modal-input"
+                    value={payCardSourceAccId}
+                    onChange={(e) => {
+                      setPayCardSourceAccId(e.target.value);
+                      setPayCardSourceSubId("");
+                    }}
+                    required
+                  >
+                    <option value="">Select account...</option>
+                    {nonCreditAccounts.map((acc) => (
+                      <option key={acc.account_id} value={acc.account_id}>
+                        {acc.account_name} (Available: RM{" "}
+                        {formatAmount(getAvailableCashBalance(acc, ""))})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {selectedPayCardSourceAcc &&
+                  selectedPayCardSourceAcc.subaccounts.length > 0 && (
+                    <div className="mb-2">
+                      <label className="fintrack-modal-label">
+                        Sub-account (optional)
+                      </label>
+                      <select
+                        className="form-select fintrack-modal-input"
+                        value={payCardSourceSubId}
+                        onChange={(e) => setPayCardSourceSubId(e.target.value)}
+                      >
+                        <option value="">
+                          Unallocated (RM{" "}
+                          {formatAmount(
+                            getUnallocated(selectedPayCardSourceAcc)
+                          )}
+                          )
+                        </option>
+                        {selectedPayCardSourceAcc.subaccounts.map((sub) => (
+                          <option
+                            key={sub.subaccount_id}
+                            value={sub.subaccount_id}
+                          >
+                            {sub.subaccount_name} (RM{" "}
+                            {formatAmount(Number(sub.subaccount_value))})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                {/* Live Impact Preview */}
+                {selectedPayCardSourceAcc &&
+                  parseFloat(payCardAmountInput || "0") > 0 &&
+                  (() => {
+                    const amt = round2(parseFloat(payCardAmountInput || "0"));
+                    const srcAvailBefore = getAvailableCashBalance(
+                      selectedPayCardSourceAcc,
+                      payCardSourceSubId
+                    );
+                    const srcAvailAfter = round2(srcAvailBefore - amt);
+                    const cardBalBefore = Number(payingCard.account_balance);
+                    const cardBalAfter = Math.min(
+                      0,
+                      round2(cardBalBefore + amt)
+                    );
+                    const cardLimitBefore =
+                      getCreditCardAvailableLimit(payingCard);
+                    const cardLimitAfter = round2(cardLimitBefore + amt);
+
+                    return (
+                      <div
+                        className="pt-2 mt-2"
+                        style={{
+                          borderTop: "1px solid #e2ebe4",
+                          fontSize: "0.75rem",
+                          color: "#2e4738",
+                        }}
+                      >
+                        <div className="d-flex justify-content-between align-items-center mb-1">
+                          <span>{selectedPayCardSourceAcc.account_name}:</span>
+                          <strong>
+                            RM {formatAmount(srcAvailBefore)} →{" "}
+                            {formatSignedRM(srcAvailAfter)}
+                          </strong>
+                        </div>
+                        <div className="d-flex justify-content-between align-items-center mb-1">
+                          <span>{payingCard.account_name} balance:</span>
+                          <strong>
+                            {formatSignedRM(cardBalBefore)} →{" "}
+                            {formatSignedRM(cardBalAfter)}
+                          </strong>
+                        </div>
+                        <div className="d-flex justify-content-between align-items-center">
+                          <span>Available credit limit:</span>
+                          <strong style={{ color: "#15803d" }}>
+                            RM {formatAmount(cardLimitBefore)} → RM{" "}
+                            {formatAmount(cardLimitAfter)}
+                          </strong>
+                        </div>
+                      </div>
+                    );
+                  })()}
+              </div>
+
+              {/* Optional Note */}
+              <div className="mb-3">
+                <label className="fintrack-modal-label">Note (optional)</label>
+                <input
+                  type="text"
+                  value={payCardNote}
+                  onChange={(e) => setPayCardNote(e.target.value)}
+                  placeholder="e.g. Monthly statement settlement"
+                  className="form-control fintrack-modal-input"
+                />
+              </div>
+
+              <div className="d-flex justify-content-end gap-2 mt-4">
+                <Button
+                  className="fintrack-modal-cancel-btn"
+                  onClick={() => setPayingCard(null)}
+                  disabled={payingCardLoading}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  htmlType="submit"
+                  className="fintrack-modal-primary-btn"
+                  loading={payingCardLoading}
+                >
+                  Confirm payment
+                </Button>
+              </div>
+            </form>
+          </div>
+        )}
       </Modal>
 
       {/* =========================================================
@@ -1125,6 +2097,28 @@ export default function AccountsPage() {
                   )}
                 </span>
               </div>
+              {deletingAccount.is_credit_card &&
+                Number(deletingAccount.unpaid_financing_hold || 0) > 0 && (
+                  <div
+                    className="mt-2 pt-2"
+                    style={{
+                      borderTop: "1px solid #e2ebe4",
+                      fontSize: "0.75rem",
+                      color: "#4338ca",
+                    }}
+                  >
+                    <i className="bi bi-info-circle me-1" />
+                    Active financing plans holding{" "}
+                    <strong>
+                      RM{" "}
+                      {formatAmount(
+                        Number(deletingAccount.unpaid_financing_hold || 0)
+                      )}
+                    </strong>{" "}
+                    on this card will be automatically unlinked and kept as
+                    standalone plans.
+                  </div>
+                )}
             </div>
           )
         }
