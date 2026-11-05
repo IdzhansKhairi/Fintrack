@@ -74,13 +74,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="d-flex" style={{ height: "100vh", overflow: "hidden" }}>
+    <div
+      className="d-flex flex-column flex-lg-row"
+      style={{ height: "100dvh", overflow: "hidden" }}
+    >
       <Sidebar />
       <main
         className="flex-grow-1"
-        style={{ overflowY: "auto", overflowX: "hidden" }}
+        style={{ overflowY: "auto", overflowX: "hidden", minWidth: 0 }}
       >
-        <div className="page-body-padding">{children}</div>
+        <div className="page-body-padding p-3 p-sm-4 p-lg-5">{children}</div>
       </main>
     </div>
   );

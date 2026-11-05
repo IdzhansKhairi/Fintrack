@@ -970,7 +970,7 @@ export default function WishlistPage() {
 
             {/* Row 2: Category & Estimated price (RM) */}
             <div className="row g-3 mb-3">
-              <div className="col-6">
+              <div className="col-12 col-sm-6">
                 <label className="fintrack-modal-label">Category</label>
                 <select
                   className="form-select fintrack-modal-input"
@@ -985,7 +985,7 @@ export default function WishlistPage() {
                 </select>
               </div>
 
-              <div className="col-6">
+              <div className="col-12 col-sm-6">
                 <label className="fintrack-modal-label">Estimated price (RM)</label>
                 <input
                   type="text"

@@ -2444,7 +2444,7 @@ export default function DebtsPage() {
 
           {/* Row 1: Type & Amount (RM) */}
           <div className="row g-3 mb-3">
-            <div className="col-6">
+            <div className="col-12 col-sm-6">
               <label className="fintrack-modal-label">Type</label>
               <select
                 value={debtType}
@@ -2457,7 +2457,7 @@ export default function DebtsPage() {
                 <option value="borrowed">Borrowed (I owe)</option>
               </select>
             </div>
-            <div className="col-6">
+            <div className="col-12 col-sm-6">
               <label className="fintrack-modal-label">Amount (RM)</label>
               <input
                 type="text"
@@ -2475,7 +2475,7 @@ export default function DebtsPage() {
 
           {/* Row 2: Person & Debt Name */}
           <div className="row g-3 mb-3">
-            <div className="col-6">
+            <div className="col-12 col-sm-6">
               <label className="fintrack-modal-label">Person</label>
               <input
                 type="text"
@@ -2486,7 +2486,7 @@ export default function DebtsPage() {
                 className="form-control fintrack-modal-input"
               />
             </div>
-            <div className="col-6">
+            <div className="col-12 col-sm-6">
               <label className="fintrack-modal-label">Debt title / reason</label>
               <input
                 type="text"
@@ -2501,7 +2501,7 @@ export default function DebtsPage() {
 
           {/* Row 3: Date Recorded (DD-MM-YYYY) & Due Date (DD-MM-YYYY) */}
           <div className="row g-3 mb-3">
-            <div className="col-6">
+            <div className="col-12 col-sm-6">
               <label className="fintrack-modal-label">Date (DD-MM-YYYY)</label>
               <DateInputDDMMYYYY
                 value={debtDate}
@@ -2510,7 +2510,7 @@ export default function DebtsPage() {
                 max={getTodayDateString()}
               />
             </div>
-            <div className="col-6">
+            <div className="col-12 col-sm-6">
               <label className="fintrack-modal-label">
                 Due date (optional)
               </label>
@@ -2573,7 +2573,7 @@ export default function DebtsPage() {
             {reflectInAccount && (
               <>
                 <div className="row g-2 mt-2">
-                  <div className="col-6">
+                  <div className="col-12 col-sm-6">
                     <label className="fintrack-modal-label">
                       {debtType === "lent" ? "Lend from account" : "Deposit into account"}
                     </label>
@@ -2599,7 +2599,7 @@ export default function DebtsPage() {
                     </select>
                   </div>
 
-                  <div className="col-6">
+                  <div className="col-12 col-sm-6">
                     <label className="fintrack-modal-label">Sub-account</label>
                     <select
                       value={debtSubId}
@@ -2891,7 +2891,7 @@ export default function DebtsPage() {
               {settleReflectInAccount && (
                 <>
                   <div className="row g-2 mt-2">
-                    <div className="col-6">
+                    <div className="col-12 col-sm-6">
                       <label className="fintrack-modal-label">
                         {settlingDebt.debts_type === "lent"
                           ? "Receive into account"
@@ -2913,7 +2913,7 @@ export default function DebtsPage() {
                       </select>
                     </div>
 
-                    <div className="col-6">
+                    <div className="col-12 col-sm-6">
                       <label className="fintrack-modal-label">Sub-account</label>
                       <select
                         value={settleSubId}

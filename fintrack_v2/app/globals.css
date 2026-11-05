@@ -120,7 +120,8 @@ h3 {
 /* ===========================
    UNIVERSAL FINTRACK MODAL
    =========================== */
-.fintrack-modal .ant-modal-content {
+.fintrack-modal .ant-modal-content,
+.fintrack-Account-Modal .ant-modal-content {
   border-radius: 18px !important;
   padding: 24px !important;
   background-color: #ffffff !important;
@@ -128,16 +129,38 @@ h3 {
   font-family: var(--font-poppins), 'Poppins', sans-serif !important;
 }
 
-.fintrack-modal .ant-modal-header {
+.fintrack-modal .ant-modal-header,
+.fintrack-Account-Modal .ant-modal-header {
   background: transparent !important;
   margin-bottom: 8px !important;
 }
 
-.fintrack-modal .ant-modal-title {
+.fintrack-modal .ant-modal-title,
+.fintrack-Account-Modal .ant-modal-title {
   font-family: var(--font-poppins), 'Poppins', sans-serif !important;
   font-size: 1.15rem !important;
   font-weight: 600 !important;
   color: var(--text-primary) !important;
+}
+
+@media (max-width: 575.98px) {
+  .page-title {
+    font-size: 1.45rem !important;
+  }
+
+  .fintrack-modal.ant-modal,
+  .fintrack-Account-Modal.ant-modal,
+  .ant-modal {
+    max-width: calc(100vw - 24px) !important;
+    margin: 12px auto !important;
+  }
+
+  .fintrack-modal .ant-modal-content,
+  .fintrack-Account-Modal .ant-modal-content,
+  .ant-modal .ant-modal-content {
+    padding: 18px 16px !important;
+    border-radius: 16px !important;
+  }
 }
 
 .fintrack-modal-cancel-btn,
@@ -300,4 +323,14 @@ select.fintrack-modal-input,
   font-family: var(--font-poppins), 'Poppins', sans-serif;
   cursor: pointer;
   animation: fintrackToastSlideUp 0.2s ease-out forwards;
+}
+
+@media (max-width: 575.98px) {
+  .fintrack-bottom-toast {
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    min-width: 0;
+    max-width: none;
+  }
 }

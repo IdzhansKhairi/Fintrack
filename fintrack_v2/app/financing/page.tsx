@@ -3661,6 +3661,7 @@ export default function FinancingPage() {
                   </div>
                 ) : (
                   <div
+                    className="table-responsive"
                     style={{
                       maxHeight: "390px",
                       overflowY: "auto",

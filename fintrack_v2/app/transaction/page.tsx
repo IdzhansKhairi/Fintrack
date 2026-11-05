@@ -1969,7 +1969,7 @@ export default function TransactionPage() {
 
         {/* Row 1: Type & Amount (RM) */}
         <div className="row g-3 mb-3">
-          <div className="col-6">
+          <div className="col-12 col-sm-6">
             <label className="fintrack-modal-label">Type</label>
             <select
               className="form-select fintrack-modal-input"
@@ -1983,7 +1983,7 @@ export default function TransactionPage() {
             </select>
           </div>
 
-          <div className="col-6">
+          <div className="col-12 col-sm-6">
             <label className="fintrack-modal-label">Amount (RM)</label>
             <input
               type="text"
@@ -2012,7 +2012,7 @@ export default function TransactionPage() {
 
         {/* Row 3: Date (with "Today" checkbox) & Dynamic Category */}
         <div className="row g-3 mb-3">
-          <div className="col-6">
+          <div className="col-12 col-sm-6">
             <div className="d-flex justify-content-between align-items-center mb-1">
               <label className="fintrack-modal-label mb-0">Date</label>
               <label
@@ -2062,7 +2062,7 @@ export default function TransactionPage() {
             )}
           </div>
 
-          <div className="col-6">
+          <div className="col-12 col-sm-6">
             <label className="fintrack-modal-label">
               {txType === "expense" ? "Expense Category" : "Income Category"}
             </label>
@@ -2083,7 +2083,7 @@ export default function TransactionPage() {
 
         {/* Row 4: Account & Sub-account */}
         <div className="row g-3 mb-2">
-          <div className="col-6">
+          <div className="col-12 col-sm-6">
             <label className="fintrack-modal-label">Account</label>
             <select
               className="form-select fintrack-modal-input"
@@ -2103,7 +2103,7 @@ export default function TransactionPage() {
             </select>
           </div>
 
-          <div className="col-6">
+          <div className="col-12 col-sm-6">
             <label className="fintrack-modal-label">Sub-account</label>
             <select
               className="form-select fintrack-modal-input"

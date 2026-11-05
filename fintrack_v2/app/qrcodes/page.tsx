@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
-import { Card, Button, Segmented, notification, Row, Col, Image, ConfigProvider } from 'antd';
+import { Card, Button, Segmented, notification, Image, ConfigProvider } from 'antd';
 import qrData from '@/public/qrcodes/qr-data.json';
 
 type QRItem = {
@@ -81,9 +81,9 @@ export default function QRCodesPage() {
       </div>
 
       {/* Grid of QR Cards */}
-      <Row gutter={[24, 24]}>
+      <div className="row g-4">
         {currentData.map((item: QRItem) => (
-          <Col xs={24} sm={12} md={8} lg={8} xl={6} key={item.id}>
+          <div className="col-12 col-sm-6 col-lg-4 col-xl-3" key={item.id}>
             <Card
               hoverable={false}
               variant="borderless"
@@ -173,9 +173,9 @@ export default function QRCodesPage() {
                 </Button>
               </div>
             </Card>
-          </Col>
+          </div>
         ))}
-      </Row>
+      </div>
     </div>
   );
 }

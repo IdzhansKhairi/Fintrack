@@ -28,6 +28,7 @@ export default function Sidebar() {
   });
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Profile Edit Modal State
   const [profileModalOpen, setProfileModalOpen] = useState(false);
@@ -278,15 +279,217 @@ export default function Sidebar() {
     },
   ];
 
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
+
   const handleMenuClick: MenuProps["onClick"] = ({ key }) => {
+    setMobileMenuOpen(false);
     router.push(key);
+  };
+
+  const menuConfigTheme = {
+    components: {
+      Menu: {
+        darkItemBg: "transparent",
+        darkItemColor: "#dbe7da",
+        darkItemHoverBg: "rgba(10, 55, 35)",
+        darkItemHoverColor: "#ffffff",
+        darkItemSelectedBg: "rgba(105, 169, 128)",
+        darkItemSelectedColor: "#ffffff",
+        darkSubMenuItemBg: "transparent",
+        itemBorderRadius: 12,
+        itemHeight: 38,
+        iconSize: 13,
+        itemMarginInline: 12,
+        itemMarginBlock: 4,
+        itemPaddingInline: 16,
+      },
+    },
   };
 
   return (
     <>
+      {/* =====================================================================
+          MOBILE & TABLET TOP NAVBAR (< 992px / below lg)
+      ===================================================================== */}
+      <nav className="sidebar d-flex d-lg-none align-items-center justify-content-between px-3 py-2 flex-shrink-0 border-bottom">
+        <div className="d-flex align-items-center gap-2">
+          <button
+            type="button"
+            className={`btn btn-sm border-0 p-1 d-flex align-items-center justify-content-center mobile-hamburger-btn ${
+              mobileMenuOpen ? "is-open" : ""
+            }`}
+            style={{ color: "#eef8ea" }}
+            onClick={() => setMobileMenuOpen(true)}
+            aria-label="Open navigation menu"
+            aria-expanded={mobileMenuOpen}
+          >
+            <i className="bi bi-list" style={{ fontSize: "1.55rem", lineHeight: 1 }} />
+          </button>
+          <Link
+            href="/dashboard"
+            className="d-flex align-items-center text-decoration-none"
+          >
+            <Image
+              src="/images/fintrack-logo.png"
+              alt="Fintrack Logo"
+              width={34}
+              height={34}
+              className="me-2 logo-img"
+            />
+            <div className="d-flex flex-column">
+              <span className="fs-6 fw-bold logo-text lh-1">Fintrack</span>
+              <span className="logo-subtext" style={{ fontSize: "0.62rem" }}>
+                Personal finance
+              </span>
+            </div>
+          </Link>
+        </div>
+
+        <div className="d-flex align-items-center gap-2">
+          <button
+            type="button"
+            className="btn btn-sm p-0 border-0 d-flex align-items-center"
+            onClick={handleOpenProfileModal}
+            title="Edit profile & account settings"
+            aria-label="Edit profile"
+          >
+            <div className="sidebar-avatar" style={{ width: 32, height: 32, fontSize: "0.75rem" }}>
+              {getInitials(userProfile.fullName)}
+            </div>
+          </button>
+          <button
+            type="button"
+            className="sidebar-logout-btn"
+            style={{ width: 32, height: 32 }}
+            onClick={() => setLogoutModalOpen(true)}
+            title="Sign out"
+            aria-label="Sign out"
+          >
+            <i className="bi bi-box-arrow-right" style={{ fontSize: "0.95rem" }} />
+          </button>
+        </div>
+      </nav>
+
+      {/* =====================================================================
+          MOBILE & TABLET BOOTSTRAP OFFCANVAS DRAWER (< 992px / below lg)
+      ===================================================================== */}
       <div
-        className="sidebar d-flex flex-column justify-content-between"
-        style={{ width: 260, height: "100vh", flexShrink: 0 }}
+        className={`offcanvas-backdrop fade d-lg-none mobile-sidebar-backdrop ${
+          mobileMenuOpen ? "show" : ""
+        }`}
+        onClick={() => setMobileMenuOpen(false)}
+        aria-hidden="true"
+      />
+      <div
+        className={`offcanvas offcanvas-start sidebar d-flex d-lg-none flex-column justify-content-between mobile-sidebar-drawer ${
+          mobileMenuOpen ? "show" : ""
+        }`}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal={mobileMenuOpen}
+        aria-hidden={!mobileMenuOpen}
+        aria-label="Navigation menu"
+      >
+        <div style={{ overflowY: "auto", flexGrow: 1 }}>
+          {/* Offcanvas Header with Logo & Close Button */}
+          <div className="px-3 py-3 border-bottom d-flex align-items-center justify-content-between">
+            <Link
+              href="/dashboard"
+              onClick={() => setMobileMenuOpen(false)}
+              className="d-flex align-items-end text-decoration-none"
+            >
+              <Image
+                src="/images/fintrack-logo.png"
+                alt="Fintrack Logo"
+                width={40}
+                height={40}
+                className="me-2 logo-img"
+              />
+              <div className="d-flex flex-column">
+                <span className="fs-5 fw-bold logo-text lh-1">Fintrack</span>
+                <span className="logo-subtext mt-1">Personal finance</span>
+              </div>
+            </Link>
+            <button
+              type="button"
+              className="btn btn-sm border-0 p-1 mobile-sidebar-close-btn"
+              style={{ color: "#dbe7da" }}
+              onClick={() => setMobileMenuOpen(false)}
+              aria-label="Close navigation menu"
+            >
+              <i className="bi bi-x-lg" style={{ fontSize: "1.1rem" }} />
+            </button>
+          </div>
+
+          {/* Navigation Menu */}
+          <ConfigProvider theme={menuConfigTheme}>
+            <Menu
+              mode="inline"
+              theme="dark"
+              selectedKeys={[pathname]}
+              items={menuItems}
+              onClick={handleMenuClick}
+              className="pt-2 pb-2"
+              style={{
+                background: "transparent",
+                border: "none",
+                fontFamily: "var(--font-poppins), 'Poppins', sans-serif",
+                fontWeight: 500,
+                fontSize: "0.78rem",
+              }}
+            />
+          </ConfigProvider>
+        </div>
+
+        {/* User Footer Section */}
+        <div className="px-3 py-3 border-top d-flex align-items-center justify-content-between gap-2">
+          <button
+            type="button"
+            className="sidebar-profile-btn"
+            onClick={() => {
+              setMobileMenuOpen(false);
+              handleOpenProfileModal();
+            }}
+            title="Edit profile & account settings"
+          >
+            <div className="sidebar-avatar">
+              {getInitials(userProfile.fullName)}
+            </div>
+            <div className="d-flex flex-column" style={{ minWidth: 0 }}>
+              <span className="sidebar-user-name text-truncate">
+                {userProfile.fullName}
+              </span>
+              {userProfile.email && (
+                <span className="sidebar-user-email text-truncate">
+                  {userProfile.email}
+                </span>
+              )}
+            </div>
+          </button>
+
+          <button
+            type="button"
+            className="sidebar-logout-btn"
+            onClick={() => {
+              setMobileMenuOpen(false);
+              setLogoutModalOpen(true);
+            }}
+            title="Sign out"
+            aria-label="Sign out"
+          >
+            <i className="bi bi-box-arrow-right" style={{ fontSize: "1rem" }} />
+          </button>
+        </div>
+      </div>
+
+      {/* =====================================================================
+          DESKTOP SIDEBAR (>= 992px / lg and above)
+      ===================================================================== */}
+      <div
+        className="sidebar d-none d-lg-flex flex-column justify-content-between"
+        style={{ width: 260, height: "100dvh", flexShrink: 0 }}
       >
         <div style={{ overflowY: "auto", flexGrow: 1 }}>
           {/* Logo Section */}
@@ -310,27 +513,7 @@ export default function Sidebar() {
           </div>
 
           {/* Navigation Menu */}
-          <ConfigProvider
-            theme={{
-              components: {
-                Menu: {
-                  darkItemBg: "transparent",
-                  darkItemColor: "#dbe7da",
-                  darkItemHoverBg: "rgba(10, 55, 35)",
-                  darkItemHoverColor: "#ffffff",
-                  darkItemSelectedBg: "rgba(105, 169, 128)",
-                  darkItemSelectedColor: "#ffffff",
-                  darkSubMenuItemBg: "transparent",
-                  itemBorderRadius: 12,
-                  itemHeight: 38,
-                  iconSize: 13,
-                  itemMarginInline: 12,
-                  itemMarginBlock: 4,
-                  itemPaddingInline: 16,
-                },
-              },
-            }}
-          >
+          <ConfigProvider theme={menuConfigTheme}>
             <Menu
               mode="inline"
               theme="dark"
@@ -406,7 +589,8 @@ export default function Sidebar() {
         footer={null}
         centered
         width={460}
-        destroyOnClose
+        className="fintrack-modal"
+        destroyOnHidden
         styles={{
           body: {
             padding: "8px 4px",

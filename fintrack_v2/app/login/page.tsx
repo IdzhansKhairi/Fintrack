@@ -90,7 +90,6 @@ export default function LoginPage() {
         style={{
           background:
             "linear-gradient(135deg, #184275 0%, #1c5689 35%, #2a6f7b 70%, #4ea277 100%)",
-          minHeight: "450px",
         }}
       >
         {/* Top Logo */}
@@ -106,11 +105,11 @@ export default function LoginPage() {
         </div>
 
         {/* Middle Headlines & Features */}
-        <div className="my-5 my-lg-auto" style={{ maxWidth: "520px" }}>
+        <div className="my-3 my-lg-auto" style={{ maxWidth: "520px" }}>
           <h1
-            className="text-white fw-bold mb-4"
+            className="text-white fw-bold mb-2 mb-md-4"
             style={{
-              fontSize: "2.4rem",
+              fontSize: "clamp(1.45rem, 3.2vw, 2.4rem)",
               lineHeight: 1.25,
               letterSpacing: "-0.5px",
             }}
@@ -119,11 +118,11 @@ export default function LoginPage() {
             in one calm dashboard.
           </h1>
 
-          <div className="d-flex flex-column gap-3 mt-4">
+          <div className="d-none d-md-flex flex-column gap-3 mt-4">
             {/* Feature 1 */}
             <div className="d-flex align-items-center gap-3">
               <div
-                className="rounded-circle d-flex align-items-center justify-content-center text-white"
+                className="rounded-circle d-flex align-items-center justify-content-center text-white flex-shrink-0"
                 style={{
                   width: 38,
                   height: 38,
@@ -141,7 +140,7 @@ export default function LoginPage() {
             {/* Feature 2 */}
             <div className="d-flex align-items-center gap-3">
               <div
-                className="rounded-circle d-flex align-items-center justify-content-center text-white"
+                className="rounded-circle d-flex align-items-center justify-content-center text-white flex-shrink-0"
                 style={{
                   width: 38,
                   height: 38,
@@ -159,7 +158,7 @@ export default function LoginPage() {
             {/* Feature 3 */}
             <div className="d-flex align-items-center gap-3">
               <div
-                className="rounded-circle d-flex align-items-center justify-content-center text-white"
+                className="rounded-circle d-flex align-items-center justify-content-center text-white flex-shrink-0"
                 style={{
                   width: 38,
                   height: 38,
@@ -177,7 +176,7 @@ export default function LoginPage() {
         </div>
 
         {/* Footer */}
-        <div className="text-white-50 small" style={{ fontSize: "0.8rem" }}>
+        <div className="d-none d-lg-block text-white-50 small" style={{ fontSize: "0.8rem" }}>
           © 2026 Fintrack. Personal finance, done right.
         </div>
       </div>

@@ -946,7 +946,7 @@ export default function AccountsPage() {
   return (
     <div>
       {/* 1. Page Title, Subtitle, Add Account Button */}
-      <div className="d-flex justify-content-between align-items-center mb-4">
+      <div className="d-flex flex-wrap justify-content-between align-items-start align-items-sm-center gap-3 mb-4">
         <div>
           <h1 className="page-title">Accounts</h1>
           <p className="page-subtitle mb-0">
@@ -954,7 +954,7 @@ export default function AccountsPage() {
             sub-accounts
           </p>
         </div>
-        <div>
+        <div className="flex-shrink-0">
           <AddButton onClick={handleOpenAddAccount}>Add account</AddButton>
         </div>
       </div>
@@ -1426,7 +1426,7 @@ export default function AccountsPage() {
             {accountType === "Credit Card" ? (
               <>
                 <div className="row g-3 mb-3">
-                  <div className="col-6">
+                  <div className="col-12 col-sm-6">
                     <label className="fintrack-modal-label">Type</label>
                     <select
                       value={accountType}
@@ -1441,7 +1441,7 @@ export default function AccountsPage() {
                     </select>
                   </div>
 
-                  <div className="col-6">
+                  <div className="col-12 col-sm-6">
                     <label className="fintrack-modal-label">
                       Credit limit (RM)
                     </label>
@@ -1597,7 +1597,7 @@ export default function AccountsPage() {
             ) : (
               /* Type & Balance Row for Non-Credit Card Accounts */
               <div className="row g-3 mb-3">
-                <div className="col-6">
+                <div className="col-12 col-sm-6">
                   <label className="fintrack-modal-label">Type</label>
                   <select
                     value={accountType}
@@ -1612,7 +1612,7 @@ export default function AccountsPage() {
                   </select>
                 </div>
 
-                <div className="col-6">
+                <div className="col-12 col-sm-6">
                   <label className="fintrack-modal-label">Balance (RM)</label>
                   <input
                     type="text"

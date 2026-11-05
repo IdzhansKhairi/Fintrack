@@ -1571,13 +1571,14 @@ export default function InsightsPage() {
 
               {/* Split Cards Breakdown */}
               <div className="row g-2 mt-2">
-                <div className="col-6">
+                <div className="col-12 col-sm-6">
                   <div
                     style={{
                       backgroundColor: "#f7f9fc",
                       borderRadius: "14px",
                       padding: "14px 16px",
                       border: "1px solid #e2e8f0",
+                      height: "100%",
                     }}
                   >
                     <div
@@ -1608,13 +1609,14 @@ export default function InsightsPage() {
                   </div>
                 </div>
 
-                <div className="col-6">
+                <div className="col-12 col-sm-6">
                   <div
                     style={{
                       backgroundColor: "#f6fbf7",
                       borderRadius: "14px",
                       padding: "14px 16px",
                       border: "1px solid #e1efe4",
+                      height: "100%",
                     }}
                   >
                     <div

@@ -2042,7 +2042,7 @@ export default function TabungPage() {
           </div>
 
           <div className="row g-3 mb-3">
-            <div className="col-6">
+            <div className="col-12 col-sm-6">
               <label className="fintrack-modal-label">Purpose</label>
               <select
                 value={fundPurpose}
@@ -2056,7 +2056,7 @@ export default function TabungPage() {
                 ))}
               </select>
             </div>
-            <div className="col-6">
+            <div className="col-12 col-sm-6">
               <label className="fintrack-modal-label">Held at</label>
               <select
                 value={fundHeldAt}
@@ -2080,7 +2080,7 @@ export default function TabungPage() {
           </div>
 
           <div className="row g-3 mb-3">
-            <div className="col-6">
+            <div className="col-12 col-sm-6">
               <label className="fintrack-modal-label">Target (RM)</label>
               <input
                 type="text"
@@ -2092,7 +2092,7 @@ export default function TabungPage() {
                 className="form-control fintrack-modal-input"
               />
             </div>
-            <div className="col-6">
+            <div className="col-12 col-sm-6">
               <label className="fintrack-modal-label">Target date (optional)</label>
               <input
                 type="date"
@@ -2166,7 +2166,7 @@ export default function TabungPage() {
           {contribModalError && <ErrorBox message={contribModalError} />}
 
           <div className="row g-3 mb-3">
-            <div className="col-6">
+            <div className="col-12 col-sm-6">
               <div className="d-flex justify-content-between align-items-center">
                 <label className="fintrack-modal-label">Amount (RM)</label>
                 {contribMode === "add" &&
@@ -2200,7 +2200,7 @@ export default function TabungPage() {
                 className="form-control fintrack-modal-input"
               />
             </div>
-            <div className="col-6">
+            <div className="col-12 col-sm-6">
               <label className="fintrack-modal-label">Date</label>
               <input
                 type="date"
@@ -2262,7 +2262,7 @@ export default function TabungPage() {
               {reflectInAccount && activeAccounts.length > 0 && (
                 <>
                   <div className="row g-3 mt-1">
-                    <div className="col-6">
+                    <div className="col-12 col-sm-6">
                       <label className="fintrack-modal-label">
                         {contribType === "deposit" ? "From account" : "To account"}
                       </label>
@@ -2278,7 +2278,7 @@ export default function TabungPage() {
                         ))}
                       </select>
                     </div>
-                    <div className="col-6">
+                    <div className="col-12 col-sm-6">
                       <label className="fintrack-modal-label">Sub-account</label>
                       <select
                         className="form-select fintrack-modal-input"

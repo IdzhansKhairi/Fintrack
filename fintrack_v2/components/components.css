@@ -120,3 +120,82 @@
 .sidebar .ant-menu-item-group:first-child .ant-menu-item-group-title {
     padding-top: 0 !important;
 }
+
+/* ===========================
+   MOBILE / TABLET OFFCANVAS ANIMATION
+   =========================== */
+.mobile-sidebar-backdrop {
+    z-index: 1050;
+    background-color: rgba(3, 24, 15, 0.55) !important;
+    backdrop-filter: blur(2px);
+    opacity: 0 !important;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+                visibility 0.28s cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+
+.mobile-sidebar-backdrop.show {
+    opacity: 1 !important;
+    visibility: visible;
+    pointer-events: auto;
+}
+
+.mobile-sidebar-drawer {
+    width: 270px !important;
+    z-index: 1055;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateX(-100%) !important;
+    box-shadow: none;
+    transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+                visibility 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+                box-shadow 0.32s ease !important;
+}
+
+.mobile-sidebar-drawer.show {
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateX(0) !important;
+    box-shadow: 12px 0 36px rgba(0, 0, 0, 0.32);
+}
+
+/* Subtle entrance slide & fade for menu items when mobile drawer opens */
+.mobile-sidebar-drawer .ant-menu-item,
+.mobile-sidebar-drawer .ant-menu-item-group-title {
+    opacity: 0;
+    transform: translateX(-10px);
+    transition: opacity 0.26s ease 0.06s,
+                transform 0.26s cubic-bezier(0.22, 1, 0.36, 1) 0.06s,
+                background-color 0.2s ease,
+                color 0.2s ease;
+}
+
+.mobile-sidebar-drawer.show .ant-menu-item,
+.mobile-sidebar-drawer.show .ant-menu-item-group-title {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.mobile-hamburger-btn,
+.mobile-sidebar-close-btn {
+    border-radius: 8px;
+    transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+                background-color 0.2s ease !important;
+}
+
+.mobile-hamburger-btn:hover,
+.mobile-sidebar-close-btn:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.mobile-hamburger-btn:active,
+.mobile-sidebar-close-btn:active {
+    transform: scale(0.9);
+}
+
+.mobile-sidebar-close-btn:hover i {
+    display: inline-block;
+    transform: rotate(90deg);
+    transition: transform 0.2s ease;
+}
