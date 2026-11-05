@@ -535,7 +535,7 @@ export default function WishlistPage() {
                           border: "none",
                           borderRadius: "10px",
                           padding: "6px 14px",
-                          fontSize: "0.8rem",
+                          fontSize: "0.82rem",
                           fontWeight: active ? 600 : 500,
                           backgroundColor: active ? "#69a980" : "transparent",
                           color: active ? "#fcf7dc" : "#4a5d52",
@@ -632,7 +632,7 @@ export default function WishlistPage() {
                 style={{
                   width: "52px",
                   height: "52px",
-                  borderRadius: "50%",
+                  borderRadius: "14px",
                   backgroundColor: "#eff6f1",
                   color: "#69a980",
                   display: "inline-flex",
@@ -644,20 +644,20 @@ export default function WishlistPage() {
               >
                 <i className="bi bi-heart" />
               </div>
-              <h3 style={{ fontSize: "1.05rem", fontWeight: 600, marginBottom: "4px" }}>
+              <h3 style={{ fontSize: "1.05rem", fontWeight: 700, color: "#1a2e23", marginBottom: "4px" }}>
                 {items.length === 0
-                  ? "Your wishlist is empty"
+                  ? "No wishlist items yet"
                   : "No wishlist items match your filter"}
               </h3>
               <p
                 style={{
-                  fontSize: "0.8rem",
+                  fontSize: "0.82rem",
                   color: "#6b7f72",
                   marginBottom: 0,
                 }}
               >
                 {items.length === 0
-                  ? 'Click "+ Add item" at the top right to start tracking items you wish to buy.'
+                  ? 'Click "+ Add item" to start tracking items you wish to buy.'
                   : "Try switching the filter tab or clearing your search query."}
               </p>
             </div>

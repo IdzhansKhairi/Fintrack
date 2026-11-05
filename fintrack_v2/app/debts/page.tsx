@@ -1422,7 +1422,7 @@ export default function DebtsPage() {
     const selectedSub =
       selectedAcc && settleSubId
         ? selectedAcc.subaccounts.find((s) => s.subaccount_id === settleSubId) ||
-          null
+        null
         : null;
 
     if (settleReflectInAccount) {
@@ -1789,9 +1789,8 @@ export default function DebtsPage() {
               >
                 {summary.pendingLentCount === 0
                   ? "No active lent records"
-                  : `${summary.pendingLentCount} pending lent ${
-                      summary.pendingLentCount === 1 ? "record" : "records"
-                    }`}
+                  : `${summary.pendingLentCount} pending lent ${summary.pendingLentCount === 1 ? "record" : "records"
+                  }`}
               </div>
             </div>
             <div
@@ -1847,9 +1846,8 @@ export default function DebtsPage() {
               >
                 {summary.pendingBorrowedCount === 0
                   ? "No active borrowed records"
-                  : `${summary.pendingBorrowedCount} pending borrowed ${
-                      summary.pendingBorrowedCount === 1 ? "record" : "records"
-                    }`}
+                  : `${summary.pendingBorrowedCount} pending borrowed ${summary.pendingBorrowedCount === 1 ? "record" : "records"
+                  }`}
               </div>
             </div>
             <div
@@ -1894,8 +1892,8 @@ export default function DebtsPage() {
                     summary.netPosition > 0
                       ? "#16a34a"
                       : summary.netPosition < 0
-                      ? "#dc2626"
-                      : "#1a2e23",
+                        ? "#dc2626"
+                        : "#1a2e23",
                   lineHeight: 1.2,
                 }}
               >
@@ -1934,11 +1932,10 @@ export default function DebtsPage() {
               }}
             >
               <i
-                className={`bi ${
-                  summary.overdueCount > 0
+                className={`bi ${summary.overdueCount > 0
                     ? "bi-clock-history"
                     : "bi-arrow-left-right"
-                }`}
+                  }`}
                 style={{ fontSize: "1.1rem" }}
               />
             </div>
@@ -2092,25 +2089,27 @@ export default function DebtsPage() {
       ) : filteredDebts.length === 0 ? (
         <div className="text-center py-5 px-3" style={panelStyle}>
           <div
-            className="rounded-circle d-inline-flex align-items-center justify-content-center mb-3"
             style={{
-              width: 52,
-              height: 52,
-              backgroundColor: "#eef5f0",
+              width: "52px",
+              height: "52px",
+              borderRadius: "14px",
+              backgroundColor: "#eff6f1",
               color: "#69a980",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "1.35rem",
+              marginBottom: "12px",
             }}
           >
-            <i
-              className="bi bi-arrow-left-right"
-              style={{ fontSize: "1.3rem" }}
-            />
+            <i className="bi bi-cash-coin" />
           </div>
-          <h3 className="mb-1" style={{ fontSize: "1.05rem" }}>
+          <h3 style={{ fontSize: "1.05rem", fontWeight: 700, color: "#1a2e23", marginBottom: "4px" }}>
             {debts.length === 0
               ? "No debt records yet"
               : "No debts match your filters"}
           </h3>
-          <p className="text-secondary small mb-0">
+          <p style={{ fontSize: "0.82rem", color: "#6b7f72", marginBottom: 0 }}>
             {debts.length === 0
               ? 'Click "+ New debt" to record money you have lent or borrowed.'
               : "Try switching between Pending, Settled, or All tabs."}
@@ -2142,9 +2141,8 @@ export default function DebtsPage() {
                   d.debts_due_date
                 )})`;
               } else if (dueInfo.isDueSoon && dueInfo.daysDiff !== null) {
-                dateSubtitle = `${typeLabel} · Due in ${
-                  dueInfo.daysDiff
-                }d (${formatDisplayDate(d.debts_due_date)})`;
+                dateSubtitle = `${typeLabel} · Due in ${dueInfo.daysDiff
+                  }d (${formatDisplayDate(d.debts_due_date)})`;
               } else {
                 dateSubtitle = `${typeLabel} · Due ${formatDisplayDate(
                   d.debts_due_date
@@ -2178,9 +2176,8 @@ export default function DebtsPage() {
                         }}
                       >
                         <i
-                          className={`bi ${
-                            isLent ? "bi-arrow-down-left" : "bi-arrow-up-right"
-                          }`}
+                          className={`bi ${isLent ? "bi-arrow-down-left" : "bi-arrow-up-right"
+                            }`}
                           style={{ fontSize: "1.05rem" }}
                         />
                       </div>
@@ -2200,8 +2197,8 @@ export default function DebtsPage() {
                             color: dueInfo.isOverdue
                               ? "#dc2626"
                               : dueInfo.isDueToday || dueInfo.isDueSoon
-                              ? "#b45309"
-                              : "#6b7f72",
+                                ? "#b45309"
+                                : "#6b7f72",
                             fontWeight:
                               dueInfo.isOverdue || dueInfo.isDueToday
                                 ? 600
@@ -2334,15 +2331,14 @@ export default function DebtsPage() {
                       <div className="d-flex align-items-center justify-content-between gap-2">
                         <span className="text-truncate">
                           <i
-                            className={`bi ${
-                              hasCreatedLink ? "bi-link-45deg" : "bi-journal-text"
-                            } me-1`}
+                            className={`bi ${hasCreatedLink ? "bi-link-45deg" : "bi-journal-text"
+                              } me-1`}
                           />
                           {hasCreatedLink
                             ? `${isLent ? "From" : "Into"}: ${getAccountLabel(
-                                d.account_id,
-                                d.subaccount_id
-                              )}`
+                              d.account_id,
+                              d.subaccount_id
+                            )}`
                             : "Not linked to an account"}
                         </span>
                         <span
@@ -2364,12 +2360,11 @@ export default function DebtsPage() {
                           <span className="text-truncate">
                             <i className="bi bi-check2-circle me-1" />
                             {hasSettledLink
-                              ? `Settled ${
-                                  isLent ? "into" : "from"
-                                }: ${getAccountLabel(
-                                  d.settled_account_id,
-                                  d.settled_subaccount_id
-                                )}`
+                              ? `Settled ${isLent ? "into" : "from"
+                              }: ${getAccountLabel(
+                                d.settled_account_id,
+                                d.settled_subaccount_id
+                              )}`
                               : "Settled (no account link)"}
                           </span>
                           <span className="flex-shrink-0 fw-semibold">
@@ -2606,7 +2601,7 @@ export default function DebtsPage() {
                       className="form-select fintrack-modal-input"
                     >
                       {!selectedDebtModalAccount ||
-                      selectedDebtModalAccount.subaccounts.length === 0 ? (
+                        selectedDebtModalAccount.subaccounts.length === 0 ? (
                         <option value="">None</option>
                       ) : (
                         <>
@@ -2614,14 +2609,14 @@ export default function DebtsPage() {
                             debtType === "lent" &&
                             getUnallocated(selectedDebtModalAccount) <= 0.001
                           ) && (
-                            <option value="">
-                              Unallocated (RM{" "}
-                              {formatAmount(
-                                getUnallocated(selectedDebtModalAccount)
-                              )}
-                              )
-                            </option>
-                          )}
+                              <option value="">
+                                Unallocated (RM{" "}
+                                {formatAmount(
+                                  getUnallocated(selectedDebtModalAccount)
+                                )}
+                                )
+                              </option>
+                            )}
                           {selectedDebtModalAccount.subaccounts.map((sub) => (
                             <option
                               key={sub.subaccount_id}
@@ -2708,8 +2703,8 @@ export default function DebtsPage() {
           pendingSave?.mode === "edit"
             ? "Confirm changes to this debt?"
             : pendingSave?.type === "lent"
-            ? "Confirm lending record?"
-            : "Confirm borrowing record?"
+              ? "Confirm lending record?"
+              : "Confirm borrowing record?"
         }
       >
         <p
@@ -2753,12 +2748,12 @@ export default function DebtsPage() {
                 label="Amount"
                 value={
                   pendingSave.mode === "edit" &&
-                  pendingSave.editing &&
-                  Math.abs(pendingSave.editing.debts_amount - pendingSave.amount) >
+                    pendingSave.editing &&
+                    Math.abs(pendingSave.editing.debts_amount - pendingSave.amount) >
                     0.001
                     ? `RM ${formatAmount(
-                        pendingSave.editing.debts_amount
-                      )} → RM ${formatAmount(pendingSave.amount)}`
+                      pendingSave.editing.debts_amount
+                    )} → RM ${formatAmount(pendingSave.amount)}`
                     : `RM ${formatAmount(pendingSave.amount)}`
                 }
                 last={pendingSave.impacts.length === 0}
@@ -2920,23 +2915,23 @@ export default function DebtsPage() {
                         className="form-select fintrack-modal-input"
                       >
                         {!selectedSettleModalAccount ||
-                        selectedSettleModalAccount.subaccounts.length === 0 ? (
+                          selectedSettleModalAccount.subaccounts.length === 0 ? (
                           <option value="">None</option>
                         ) : (
                           <>
                             {!(
                               settlingDebt.debts_type === "borrowed" &&
                               getUnallocated(selectedSettleModalAccount) <=
-                                0.001
+                              0.001
                             ) && (
-                              <option value="">
-                                Unallocated (RM{" "}
-                                {formatAmount(
-                                  getUnallocated(selectedSettleModalAccount)
-                                )}
-                                )
-                              </option>
-                            )}
+                                <option value="">
+                                  Unallocated (RM{" "}
+                                  {formatAmount(
+                                    getUnallocated(selectedSettleModalAccount)
+                                  )}
+                                  )
+                                </option>
+                              )}
                             {selectedSettleModalAccount.subaccounts.map(
                               (sub) => (
                                 <option

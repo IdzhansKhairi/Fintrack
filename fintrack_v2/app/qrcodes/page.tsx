@@ -86,7 +86,7 @@ export default function QRCodesPage() {
           <Col xs={24} sm={12} md={8} lg={8} xl={6} key={item.id}>
             <Card
               hoverable={false}
-              bordered={false}
+              variant="borderless"
               style={{
                 borderRadius: 16,
                 boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
@@ -94,7 +94,7 @@ export default function QRCodesPage() {
                 display: 'flex',
                 flexDirection: 'column',
               }}
-              bodyStyle={{ padding: '24px', flex: 1, display: 'flex', flexDirection: 'column' }}
+              styles={{ body: { padding: '24px', flex: 1, display: 'flex', flexDirection: 'column' } }}
             >
               {/* Card Header */}
               <div className="mb-3">

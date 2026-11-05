@@ -1,16 +1,18 @@
 "use client";
 import React, { useEffect, useState } from "react";
-import { Menu, ConfigProvider } from "antd";
+import { Menu, ConfigProvider, Modal } from "antd";
 import type { MenuProps } from "antd";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import ConfirmModal from "@/components/ConfirmModal";
+import BottomToast, { BottomToastType } from "@/components/BottomToast";
 import "./components.css";
 
 interface UserProfile {
   fullName: string;
+  preferredName: string;
   email: string;
 }
 
@@ -21,10 +23,28 @@ export default function Sidebar() {
 
   const [userProfile, setUserProfile] = useState<UserProfile>({
     fullName: "Fintrack User",
+    preferredName: "User",
     email: "",
   });
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+
+  // Profile Edit Modal State
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [editFullName, setEditFullName] = useState("");
+  const [editPreferredName, setEditPreferredName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileModalError, setProfileModalError] = useState<string | null>(null);
+
+  // Toast
+  const [toastInfo, setToastInfo] = useState<{
+    message: string;
+    type: BottomToastType;
+  } | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -38,21 +58,27 @@ export default function Sidebar() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("full_name, email")
+        .select("full_name, preferred_name, email")
         .eq("id", user.id)
-        .single();
+        .maybeSingle();
 
       if (!isMounted) return;
 
-      const resolvedName =
-        profile?.full_name ||
-        user.user_metadata?.full_name ||
+      const resolvedFullName =
+        profile?.full_name?.trim() ||
+        user.user_metadata?.full_name?.trim() ||
         user.email?.split("@")[0] ||
+        "User";
+      const resolvedPreferred =
+        profile?.preferred_name?.trim() ||
+        user.user_metadata?.preferred_name?.trim() ||
+        resolvedFullName.split(/\s+/)[0] ||
         "User";
       const resolvedEmail = profile?.email || user.email || "";
 
       setUserProfile({
-        fullName: resolvedName,
+        fullName: resolvedFullName,
+        preferredName: resolvedPreferred,
         email: resolvedEmail,
       });
     };
@@ -81,6 +107,133 @@ export default function Sidebar() {
       router.refresh();
     } finally {
       setLoggingOut(false);
+    }
+  };
+
+  const handleOpenProfileModal = () => {
+    setEditFullName(userProfile.fullName);
+    setEditPreferredName(userProfile.preferredName);
+    setEditEmail(userProfile.email);
+    setNewPassword("");
+    setConfirmPassword("");
+    setShowPassword(false);
+    setProfileModalError(null);
+    setProfileModalOpen(true);
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setProfileModalError(null);
+
+    const trimmedFull = editFullName.trim();
+    const trimmedPreferred =
+      editPreferredName.trim() || trimmedFull.split(/\s+/)[0] || trimmedFull;
+    const trimmedEmail = editEmail.trim();
+
+    if (!trimmedFull) {
+      setProfileModalError("Full name is required.");
+      return;
+    }
+
+    if (!trimmedEmail || !trimmedEmail.includes("@")) {
+      setProfileModalError("Please enter a valid email address.");
+      return;
+    }
+
+    if (newPassword.trim()) {
+      if (newPassword.length < 6) {
+        setProfileModalError("Password must be at least 6 characters.");
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        setProfileModalError("Passwords do not match.");
+        return;
+      }
+    }
+
+    setSavingProfile(true);
+    try {
+      const {
+        data: { user },
+        error: userErr,
+      } = await supabase.auth.getUser();
+
+      if (userErr || !user) {
+        throw new Error("User session not found. Please log in again.");
+      }
+
+      const authUpdates: {
+        email?: string;
+        password?: string;
+        data?: { full_name: string; preferred_name: string };
+      } = {
+        data: {
+          full_name: trimmedFull,
+          preferred_name: trimmedPreferred,
+        },
+      };
+
+      if (trimmedEmail !== user.email) {
+        authUpdates.email = trimmedEmail;
+      }
+      if (newPassword.trim()) {
+        authUpdates.password = newPassword.trim();
+      }
+
+      // 1. Update Supabase Auth user record (updates user_metadata & auth credentials)
+      const { error: authUpdateErr } = await supabase.auth.updateUser(
+        authUpdates
+      );
+      if (authUpdateErr) throw authUpdateErr;
+
+      // 2. Update profiles table directly (use update instead of upsert to satisfy RLS policy)
+      const { data: updateData, error: profileUpdateErr } = await supabase
+        .from("profiles")
+        .update({
+          full_name: trimmedFull,
+          preferred_name: trimmedPreferred,
+          email: trimmedEmail,
+        })
+        .eq("id", user.id)
+        .select();
+
+      if (profileUpdateErr || !updateData || updateData.length === 0) {
+        // Fallback: update only names if email is restricted by RLS
+        const { error: fallbackErr } = await supabase
+          .from("profiles")
+          .update({
+            full_name: trimmedFull,
+            preferred_name: trimmedPreferred,
+          })
+          .eq("id", user.id);
+
+        if (fallbackErr) {
+          console.warn("Profile table update fallback note:", fallbackErr);
+        }
+      }
+
+      // 3. Update local state
+      setUserProfile({
+        fullName: trimmedFull,
+        preferredName: trimmedPreferred,
+        email: trimmedEmail,
+      });
+
+      setProfileModalOpen(false);
+      setToastInfo({
+        message: "Profile updated successfully!",
+        type: "success",
+      });
+
+      // Refresh page so dashboard greeting and other views reflect new name
+      router.refresh();
+    } catch (err: any) {
+      console.error("Failed to update profile:", err);
+      setProfileModalError(
+        err.message || "Failed to update profile. Please try again."
+      );
+    } finally {
+      setSavingProfile(false);
     }
   };
 
@@ -198,9 +351,11 @@ export default function Sidebar() {
 
         {/* User Footer Section */}
         <div className="px-3 py-3 border-top d-flex align-items-center justify-content-between gap-2">
-          <div
-            className="d-flex align-items-center gap-2"
-            style={{ minWidth: 0, flexGrow: 1 }}
+          <button
+            type="button"
+            className="sidebar-profile-btn"
+            onClick={handleOpenProfileModal}
+            title="Edit profile & account settings"
           >
             <div className="sidebar-avatar">
               {getInitials(userProfile.fullName)}
@@ -215,7 +370,7 @@ export default function Sidebar() {
                 </span>
               )}
             </div>
-          </div>
+          </button>
 
           {/* Dedicated Sign Out Icon Button */}
           <button
@@ -242,6 +397,254 @@ export default function Sidebar() {
         loading={loggingOut}
         onConfirm={handleConfirmLogout}
         onCancel={() => setLogoutModalOpen(false)}
+      />
+
+      {/* Account Profile & Settings Modal */}
+      <Modal
+        open={profileModalOpen}
+        onCancel={() => !savingProfile && setProfileModalOpen(false)}
+        footer={null}
+        centered
+        width={460}
+        destroyOnClose
+        styles={{
+          body: {
+            padding: "8px 4px",
+          },
+        }}
+      >
+        <div className="d-flex align-items-center gap-3 mb-3">
+          <div
+            style={{
+              width: "44px",
+              height: "44px",
+              borderRadius: "50%",
+              backgroundColor: "#69a980",
+              color: "#ffffff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "1rem",
+              fontWeight: 700,
+              flexShrink: 0,
+            }}
+          >
+            {getInitials(editFullName || userProfile.fullName)}
+          </div>
+          <div>
+            <h5
+              className="fw-bold mb-0"
+              style={{ color: "#1a2e23", fontSize: "1.1rem" }}
+            >
+              Account profile
+            </h5>
+            <span style={{ fontSize: "0.78rem", color: "#6b7f72" }}>
+              Update your personal details and credentials
+            </span>
+          </div>
+        </div>
+
+        {profileModalError && (
+          <div
+            className="alert alert-danger py-2 px-3 mb-3 d-flex align-items-center gap-2"
+            style={{ fontSize: "0.82rem", borderRadius: "10px" }}
+          >
+            <i className="bi bi-exclamation-circle-fill flex-shrink-0" />
+            <span>{profileModalError}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleSaveProfile} className="d-flex flex-column gap-3">
+          <div>
+            <label
+              className="form-label mb-1"
+              style={{ fontSize: "0.82rem", fontWeight: 600, color: "#1a2e23" }}
+            >
+              Full name <span className="text-danger">*</span>
+            </label>
+            <input
+              type="text"
+              className="form-control"
+              value={editFullName}
+              onChange={(e) => setEditFullName(e.target.value)}
+              placeholder="e.g. Ahmad Zulkifli"
+              style={{
+                borderRadius: "10px",
+                border: "1px solid #dbe2dc",
+                fontSize: "0.86rem",
+                padding: "9px 13px",
+              }}
+              required
+            />
+          </div>
+
+          <div>
+            <label
+              className="form-label mb-1"
+              style={{ fontSize: "0.82rem", fontWeight: 600, color: "#1a2e23" }}
+            >
+              Preferred name / Nickname
+            </label>
+            <input
+              type="text"
+              className="form-control"
+              value={editPreferredName}
+              onChange={(e) => setEditPreferredName(e.target.value)}
+              placeholder="e.g. Ahmad (used in greetings)"
+              style={{
+                borderRadius: "10px",
+                border: "1px solid #dbe2dc",
+                fontSize: "0.86rem",
+                padding: "9px 13px",
+              }}
+            />
+            <span style={{ fontSize: "0.72rem", color: "#8b9d90" }}>
+              Used in the dashboard greeting (&quot;Welcome back,{" "}
+              {editPreferredName.trim() || "Ahmad"}&quot;)
+            </span>
+          </div>
+
+          <div>
+            <label
+              className="form-label mb-1"
+              style={{ fontSize: "0.82rem", fontWeight: 600, color: "#1a2e23" }}
+            >
+              Email address <span className="text-danger">*</span>
+            </label>
+            <input
+              type="email"
+              className="form-control"
+              value={editEmail}
+              onChange={(e) => setEditEmail(e.target.value)}
+              placeholder="name@example.com"
+              style={{
+                borderRadius: "10px",
+                border: "1px solid #dbe2dc",
+                fontSize: "0.86rem",
+                padding: "9px 13px",
+              }}
+              required
+            />
+          </div>
+
+          <div
+            style={{
+              backgroundColor: "#f7faf8",
+              borderRadius: "14px",
+              padding: "14px 16px",
+              border: "1px solid #eef2ed",
+            }}
+          >
+            <div className="d-flex justify-content-between align-items-center mb-1">
+              <span
+                style={{
+                  fontSize: "0.82rem",
+                  fontWeight: 600,
+                  color: "#1a2e23",
+                }}
+              >
+                Change password
+              </span>
+              <button
+                type="button"
+                className="btn btn-sm btn-link p-0 text-decoration-none"
+                style={{
+                  fontSize: "0.75rem",
+                  color: "#69a980",
+                  fontWeight: 600,
+                }}
+                onClick={() => setShowPassword(!showPassword)}
+              >
+                {showPassword ? "Hide password" : "Show password"}
+              </button>
+            </div>
+            <span
+              style={{
+                fontSize: "0.72rem",
+                color: "#6b7f72",
+                display: "block",
+                marginBottom: "10px",
+              }}
+            >
+              Leave blank if you do not want to change your password
+            </span>
+
+            <div className="d-flex flex-column gap-2">
+              <input
+                type={showPassword ? "text" : "password"}
+                className="form-control"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="New password (min 6 characters)"
+                style={{
+                  borderRadius: "10px",
+                  border: "1px solid #dbe2dc",
+                  fontSize: "0.86rem",
+                  padding: "9px 13px",
+                  backgroundColor: "#ffffff",
+                }}
+              />
+              {newPassword && (
+                <input
+                  type={showPassword ? "text" : "password"}
+                  className="form-control"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm new password"
+                  style={{
+                    borderRadius: "10px",
+                    border: "1px solid #dbe2dc",
+                    fontSize: "0.86rem",
+                    padding: "9px 13px",
+                    backgroundColor: "#ffffff",
+                  }}
+                  required={Boolean(newPassword)}
+                />
+              )}
+            </div>
+          </div>
+
+          <div className="d-flex justify-content-end gap-2 mt-2 pt-2 border-top">
+            <button
+              type="button"
+              className="btn btn-sm border-0"
+              style={{
+                backgroundColor: "#f1f5f3",
+                color: "#4b5e52",
+                fontWeight: 600,
+                borderRadius: "10px",
+                padding: "8px 18px",
+              }}
+              onClick={() => setProfileModalOpen(false)}
+              disabled={savingProfile}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn btn-sm"
+              style={{
+                backgroundColor: "#69a980",
+                color: "#ffffff",
+                fontWeight: 600,
+                borderRadius: "10px",
+                padding: "8px 22px",
+                border: "none",
+              }}
+              disabled={savingProfile}
+            >
+              {savingProfile ? "Saving..." : "Save changes"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Bottom Toast Notification */}
+      <BottomToast
+        open={Boolean(toastInfo)}
+        message={toastInfo?.message || ""}
+        type={toastInfo?.type || "success"}
+        onClose={() => setToastInfo(null)}
       />
     </>
   );

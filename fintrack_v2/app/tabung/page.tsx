@@ -1625,8 +1625,8 @@ export default function TabungPage() {
         </div>
       ) : loadError ? (
         <div className="text-center py-5 px-3" style={panelStyle}>
-          <h3 className="fw-bold mb-1">Couldn&apos;t load your tabung</h3>
-          <p className="text-secondary small mb-0">{loadError}</p>
+          <h3 style={{ fontSize: "1.05rem", fontWeight: 700, color: "#1a2e23", marginBottom: "4px" }}>Couldn&apos;t load your tabung</h3>
+          <p style={{ fontSize: "0.82rem", color: "#6b7f72", marginBottom: 0 }}>{loadError}</p>
         </div>
       ) : filteredTabungs.length === 0 ? (
         <div className="text-center py-5 px-3" style={panelStyle}>
@@ -1634,7 +1634,7 @@ export default function TabungPage() {
             style={{
               width: "52px",
               height: "52px",
-              borderRadius: "50%",
+              borderRadius: "14px",
               backgroundColor: "#eff6f1",
               color: "#69a980",
               display: "inline-flex",
@@ -1646,10 +1646,10 @@ export default function TabungPage() {
           >
             <i className="bi bi-piggy-bank" />
           </div>
-          <h3 className="fw-bold mb-1">
+          <h3 style={{ fontSize: "1.05rem", fontWeight: 700, color: "#1a2e23", marginBottom: "4px" }}>
             {tabungs.length === 0 ? "No tabung yet" : "No funds match your filters"}
           </h3>
-          <p className="text-secondary small mb-0">
+          <p style={{ fontSize: "0.82rem", color: "#6b7f72", marginBottom: 0 }}>
             {tabungs.length === 0
               ? 'Click "+ New fund" to start saving towards your first goal.'
               : "Try a different search, purpose or status."}

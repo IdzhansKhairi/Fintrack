@@ -555,25 +555,51 @@ export default function AccountsPage() {
           </div>
         </div>
       ) : accounts.length === 0 ? (
-        <Card className="rounded-4 border-0 shadow-sm text-center py-5">
+        <div
+          className="text-center py-5 px-3"
+          style={{
+            backgroundColor: "#ffffff",
+            borderRadius: "18px",
+            border: "1px solid #eef2ed",
+            padding: "52px 24px",
+          }}
+        >
           <div
-            className="rounded-circle d-inline-flex align-items-center justify-content-center mb-3"
             style={{
-              width: 56,
-              height: 56,
-              backgroundColor: "#eef3ed",
-              color: "#57926e",
-              fontSize: "1.5rem",
+              width: "52px",
+              height: "52px",
+              borderRadius: "14px",
+              backgroundColor: "#eff6f1",
+              color: "#69a980",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "1.35rem",
+              marginBottom: "12px",
             }}
           >
             <i className="bi bi-wallet2" />
           </div>
-          <h3 className="fw-bold mb-1">No accounts added yet</h3>
-          <p className="text-secondary small mb-0">
-            Add your first bank account, e-wallet, card, or retirement fund to
-            start tracking your net worth.
+          <h3
+            style={{
+              fontSize: "1.05rem",
+              fontWeight: 700,
+              color: "#1a2e23",
+              marginBottom: "4px",
+            }}
+          >
+            No accounts added yet
+          </h3>
+          <p
+            style={{
+              fontSize: "0.82rem",
+              color: "#6b7f72",
+              marginBottom: 0,
+            }}
+          >
+            Click &quot;+ Add account&quot; to add your bank accounts, e-wallets, cards or investment accounts.
           </p>
-        </Card>
+        </div>
       ) : (
         <div className="row g-4">
           {accounts.map((account) => {

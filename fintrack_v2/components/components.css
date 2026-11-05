@@ -81,6 +81,31 @@
     color: #ffffff;
 }
 
+.sidebar-profile-btn {
+    background: transparent;
+    border: none;
+    padding: 6px 8px;
+    margin: -6px -8px;
+    border-radius: 12px;
+    cursor: pointer;
+    text-align: left;
+    transition: background-color 0.2s ease-in-out;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    flex-grow: 1;
+}
+
+.sidebar-profile-btn:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.sidebar-profile-btn:focus-visible {
+    outline: 2px solid #69a980;
+    outline-offset: 2px;
+}
+
 /* Ant Design Menu Group Title styling in Sidebar */
 .sidebar .ant-menu-item-group-title {
     font-family: var(--font-poppins), 'Poppins', sans-serif !important;

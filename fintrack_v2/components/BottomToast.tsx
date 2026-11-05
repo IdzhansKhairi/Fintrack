@@ -2,7 +2,7 @@
 
 import React, { useEffect } from "react";
 
-export type BottomToastType = "success" | "info" | "danger";
+export type BottomToastType = "success" | "info" | "danger" | "error";
 
 interface BottomToastProps {
   open: boolean;
@@ -29,6 +29,9 @@ export default function BottomToast({
 
   if (!open || !message) return null;
 
+  const isDanger = type === "danger" || type === "error";
+  const isInfo = type === "info";
+
   return (
     <div
       className="fintrack-bottom-toast"
@@ -37,9 +40,15 @@ export default function BottomToast({
       onClick={onClose}
     >
       <i
-        className="bi bi-check-circle-fill"
+        className={
+          isDanger
+            ? "bi bi-exclamation-circle-fill"
+            : isInfo
+            ? "bi bi-info-circle-fill"
+            : "bi bi-check-circle-fill"
+        }
         style={{
-          color: "#1a2e23",
+          color: isDanger ? "#dc2626" : isInfo ? "#1d4ed8" : "#1a2e23",
           fontSize: "1.02rem",
           lineHeight: 1,
           flexShrink: 0,

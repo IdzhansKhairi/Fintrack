@@ -60,6 +60,8 @@ const EXPENSE_CATEGORIES = [
   "Tabung / Savings",
   "Debt / Lending",
   "Debt Repayment",
+  "Financing / Installment",
+  "Commitment",
   "Others",
 ];
 
@@ -172,6 +174,8 @@ export default function TransactionPage() {
   const [cancellingLoading, setCancellingLoading] = useState<boolean>(false);
   const [cancelModalError, setCancelModalError] = useState<string | null>(null);
   const [tabungLinks, setTabungLinks] = useState<Record<string, string>>({});
+  const [financingLinks, setFinancingLinks] = useState<Record<string, string>>({});
+  const [commitmentLinks, setCommitmentLinks] = useState<Record<string, string>>({});
   const [debtLinks, setDebtLinks] = useState<
     Record<string, { label: string; kind: "created" | "settled"; status: string }>
   >({});
@@ -348,6 +352,65 @@ export default function TransactionPage() {
           }
         });
         setDebtLinks(dLinks);
+      }
+
+      // Load linked Financing installments for transactions
+      const [finInstRes, finPlanRes] = await Promise.all([
+        supabase
+          .from("financing_installments")
+          .select("transaction_id, financing_id, installment_number")
+          .eq("user_id", user.id)
+          .eq("is_active", true)
+          .not("transaction_id", "is", null),
+        supabase
+          .from("financing")
+          .select("financing_id, financing_name, financing_provider")
+          .eq("user_id", user.id),
+      ]);
+      if (!finInstRes.error && !finPlanRes.error) {
+        const planMap = new Map<string, string>();
+        (finPlanRes.data || []).forEach((p) => {
+          planMap.set(
+            p.financing_id,
+            `${p.financing_name} (${p.financing_provider})`
+          );
+        });
+        const fLinks: Record<string, string> = {};
+        (finInstRes.data || []).forEach((inst) => {
+          if (inst.transaction_id) {
+            const pLabel = planMap.get(inst.financing_id) || "Financing";
+            fLinks[inst.transaction_id] = `${pLabel} — Installment #${inst.installment_number}`;
+          }
+        });
+        setFinancingLinks(fLinks);
+      }
+
+      // Load linked Commitment payments for transactions
+      const [comPayRes, comListRes] = await Promise.all([
+        supabase
+          .from("commitment_payments")
+          .select("transaction_id, commitment_id, payment_month, payment_year")
+          .eq("user_id", user.id)
+          .eq("is_active", true)
+          .not("transaction_id", "is", null),
+        supabase
+          .from("commitments")
+          .select("commitment_id, commitment_name")
+          .eq("user_id", user.id),
+      ]);
+      if (!comPayRes.error && !comListRes.error) {
+        const comMap = new Map<string, string>();
+        (comListRes.data || []).forEach((c) => {
+          comMap.set(c.commitment_id, c.commitment_name);
+        });
+        const cLinks: Record<string, string> = {};
+        (comPayRes.data || []).forEach((cp) => {
+          if (cp.transaction_id) {
+            const cName = comMap.get(cp.commitment_id) || "Commitment";
+            cLinks[cp.transaction_id] = `${cName} (${String(cp.payment_month).padStart(2, "0")}/${cp.payment_year})`;
+          }
+        });
+        setCommitmentLinks(cLinks);
       }
     } catch (err) {
       console.error("Failed to fetch transactions:", err);
@@ -1164,6 +1227,10 @@ export default function TransactionPage() {
                     className="text-center py-5"
                     style={{ color: "#6b7f72", fontSize: "0.88rem", border: "none" }}
                   >
+                    <div
+                      className="spinner-border spinner-border-sm me-2 text-success"
+                      role="status"
+                    />
                     Loading your transactions...
                   </td>
                 </tr>
@@ -1171,12 +1238,47 @@ export default function TransactionPage() {
                 <tr>
                   <td
                     colSpan={7}
-                    className="text-center py-5"
-                    style={{ color: "#6b7f72", fontSize: "0.88rem", border: "none" }}
+                    style={{ border: "none", padding: "52px 24px", textAlign: "center" }}
                   >
-                    {transactions.length === 0
-                      ? 'No transactions recorded yet. Click "+ Add transaction" to log your first income or expense.'
-                      : "No transactions match your current filters."}
+                    <div
+                      style={{
+                        width: "52px",
+                        height: "52px",
+                        borderRadius: "14px",
+                        backgroundColor: "#eff6f1",
+                        color: "#69a980",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "1.35rem",
+                        marginBottom: "12px",
+                      }}
+                    >
+                      <i className="bi bi-arrow-left-right" />
+                    </div>
+                    <h3
+                      style={{
+                        fontSize: "1.05rem",
+                        fontWeight: 700,
+                        color: "#1a2e23",
+                        marginBottom: "4px",
+                      }}
+                    >
+                      {transactions.length === 0
+                        ? "No transactions recorded yet"
+                        : "No transactions match your filters"}
+                    </h3>
+                    <p
+                      style={{
+                        fontSize: "0.82rem",
+                        color: "#6b7f72",
+                        marginBottom: 0,
+                      }}
+                    >
+                      {transactions.length === 0
+                        ? 'Click "+ Add transaction" to log your first income or expense.'
+                        : "Try selecting a different month, year, type, or clearing your search."}
+                    </p>
                   </td>
                 </tr>
               ) : (
@@ -1727,6 +1829,46 @@ export default function TransactionPage() {
                 entry from that settled debt.
               </>
             )}
+          </div>
+        )}
+
+        {cancellingTx && financingLinks[cancellingTx.transaction_id] && (
+          <div
+            style={{
+              backgroundColor: "#f6faf7",
+              border: "1px solid #e2ebe4",
+              color: "#2e4738",
+              borderRadius: "10px",
+              padding: "9px 12px",
+              fontSize: "0.78rem",
+              marginBottom: "14px",
+            }}
+          >
+            <i className="bi bi-credit-card-2-front me-1" />
+            Linked to Financing{" "}
+            <strong>{financingLinks[cancellingTx.transaction_id]}</strong>.
+            Cancelling this transaction will revert that installment back to{" "}
+            <strong>Pending</strong>.
+          </div>
+        )}
+
+        {cancellingTx && commitmentLinks[cancellingTx.transaction_id] && (
+          <div
+            style={{
+              backgroundColor: "#f6faf7",
+              border: "1px solid #e2ebe4",
+              color: "#2e4738",
+              borderRadius: "10px",
+              padding: "9px 12px",
+              fontSize: "0.78rem",
+              marginBottom: "14px",
+            }}
+          >
+            <i className="bi bi-calendar2-check me-1" />
+            Linked to Monthly Commitment{" "}
+            <strong>{commitmentLinks[cancellingTx.transaction_id]}</strong>.
+            Cancelling this transaction will revert that month back to{" "}
+            <strong>Unpaid</strong>.
           </div>
         )}
 
