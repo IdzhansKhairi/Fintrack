@@ -16,10 +16,12 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+    setSuccessMessage(null);
     setLoading(true);
 
     try {
@@ -34,6 +36,9 @@ export default function LoginPage() {
         if (error) {
           throw error;
         }
+
+        router.push("/dashboard");
+        router.refresh();
       } else {
         const trimmedName = fullName.trim();
         const trimmedPreferred =
@@ -66,11 +71,19 @@ export default function LoginPage() {
             { onConflict: "id" }
           );
         }
-      }
 
-      // Redirect into /dashboard after sign in or registration
-      router.push("/dashboard");
-      router.refresh();
+        // If email confirmation is enabled, session will be null until verified
+        if (data.session) {
+          router.push("/dashboard");
+          router.refresh();
+        } else {
+          setMode("signin");
+          setPassword("");
+          setSuccessMessage(
+            `Account created! A confirmation email has been sent to ${trimmedEmail}. Please check your inbox and verify your email, then sign in below.`
+          );
+        }
+      }
     } catch (err: any) {
       setErrorMessage(
         err.message || "An error occurred during authentication. Please try again."
@@ -218,6 +231,7 @@ export default function LoginPage() {
               onClick={() => {
                 setMode("signin");
                 setErrorMessage(null);
+                setSuccessMessage(null);
               }}
               className="btn btn-sm rounded-pill flex-grow-1 border-0 transition-all"
               style={{
@@ -237,6 +251,7 @@ export default function LoginPage() {
               onClick={() => {
                 setMode("register");
                 setErrorMessage(null);
+                setSuccessMessage(null);
               }}
               className="btn btn-sm rounded-pill flex-grow-1 border-0 transition-all"
               style={{
@@ -345,6 +360,24 @@ export default function LoginPage() {
               />
             </div>
 
+            {/* Success Notification Alert */}
+            {successMessage && (
+              <div
+                className="alert alert-success py-2 px-3 small mb-0 d-flex align-items-start gap-2"
+                style={{
+                  borderRadius: "10px",
+                  backgroundColor: "#e6f4ea",
+                  borderColor: "#c2e7cc",
+                  color: "#166534",
+                }}
+                role="alert"
+              >
+                <i className="bi bi-envelope-check-fill fs-6 mt-1 flex-shrink-0" />
+                <div style={{ lineHeight: 1.45 }}>{successMessage}</div>
+              </div>
+            )}
+
+            {/* Error Notification Alert */}
             {errorMessage && (
               <div className="alert alert-danger py-2 small mb-0" role="alert">
                 {errorMessage}
@@ -376,4 +409,3 @@ export default function LoginPage() {
     </div>
   );
 }
-
