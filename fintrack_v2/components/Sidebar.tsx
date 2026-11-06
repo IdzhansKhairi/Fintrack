@@ -391,39 +391,40 @@ export default function Sidebar() {
         aria-modal={mobileMenuOpen}
         aria-hidden={!mobileMenuOpen}
         aria-label="Navigation menu"
+        style={{ overflow: "hidden" }}
       >
-        <div style={{ overflowY: "auto", flexGrow: 1 }}>
-          {/* Offcanvas Header with Logo & Close Button */}
-          <div className="px-3 py-3 border-bottom d-flex align-items-center justify-content-between">
-            <Link
-              href="/dashboard"
-              onClick={() => setMobileMenuOpen(false)}
-              className="d-flex align-items-end text-decoration-none"
-            >
-              <Image
-                src="/images/fintrack-logo.png"
-                alt="Fintrack Logo"
-                width={40}
-                height={40}
-                className="me-2 logo-img"
-              />
-              <div className="d-flex flex-column">
-                <span className="fs-5 fw-bold logo-text lh-1">Fintrack</span>
-                <span className="logo-subtext mt-1">Personal finance</span>
-              </div>
-            </Link>
-            <button
-              type="button"
-              className="btn btn-sm border-0 p-1 mobile-sidebar-close-btn"
-              style={{ color: "#dbe7da" }}
-              onClick={() => setMobileMenuOpen(false)}
-              aria-label="Close navigation menu"
-            >
-              <i className="bi bi-x-lg" style={{ fontSize: "1.1rem" }} />
-            </button>
-          </div>
+        {/* Fixed Header: Logo & Close Button (never scrolls) */}
+        <div className="px-3 py-3 border-bottom d-flex align-items-center justify-content-between flex-shrink-0">
+          <Link
+            href="/dashboard"
+            onClick={() => setMobileMenuOpen(false)}
+            className="d-flex align-items-end text-decoration-none"
+          >
+            <Image
+              src="/images/fintrack-logo.png"
+              alt="Fintrack Logo"
+              width={40}
+              height={40}
+              className="me-2 logo-img"
+            />
+            <div className="d-flex flex-column">
+              <span className="fs-5 fw-bold logo-text lh-1">Fintrack</span>
+              <span className="logo-subtext mt-1">Personal finance</span>
+            </div>
+          </Link>
+          <button
+            type="button"
+            className="btn btn-sm border-0 p-1 mobile-sidebar-close-btn"
+            style={{ color: "#dbe7da" }}
+            onClick={() => setMobileMenuOpen(false)}
+            aria-label="Close navigation menu"
+          >
+            <i className="bi bi-x-lg" style={{ fontSize: "1.1rem" }} />
+          </button>
+        </div>
 
-          {/* Navigation Menu */}
+        {/* Scrollable Navigation Menu Only */}
+        <div style={{ overflowY: "auto", overflowX: "hidden", flexGrow: 1, minHeight: 0 }}>
           <ConfigProvider theme={menuConfigTheme}>
             <Menu
               mode="inline"
@@ -443,8 +444,8 @@ export default function Sidebar() {
           </ConfigProvider>
         </div>
 
-        {/* User Footer Section */}
-        <div className="px-3 py-3 border-top d-flex align-items-center justify-content-between gap-2">
+        {/* Fixed User Footer Section (never scrolls) */}
+        <div className="px-3 py-3 border-top d-flex align-items-center justify-content-between gap-2 flex-shrink-0">
           <button
             type="button"
             className="sidebar-profile-btn"
@@ -489,30 +490,30 @@ export default function Sidebar() {
       ===================================================================== */}
       <div
         className="sidebar d-none d-lg-flex flex-column justify-content-between"
-        style={{ width: 260, height: "100dvh", flexShrink: 0 }}
+        style={{ width: 260, height: "100dvh", flexShrink: 0, overflow: "hidden" }}
       >
-        <div style={{ overflowY: "auto", flexGrow: 1 }}>
-          {/* Logo Section */}
-          <div className="px-3 py-4 border-bottom">
-            <Link
-              href="/dashboard"
-              className="d-flex align-items-end text-decoration-none"
-            >
-              <Image
-                src="/images/fintrack-logo.png"
-                alt="Fintrack Logo"
-                width={46}
-                height={46}
-                className="me-3 logo-img"
-              />
-              <div className="d-flex flex-column">
-                <span className="fs-5 fw-bold logo-text lh-1">Fintrack</span>
-                <span className="logo-subtext mt-1">Personal finance</span>
-              </div>
-            </Link>
-          </div>
+        {/* Fixed Logo Section (never scrolls) */}
+        <div className="px-3 py-4 border-bottom flex-shrink-0">
+          <Link
+            href="/dashboard"
+            className="d-flex align-items-end text-decoration-none"
+          >
+            <Image
+              src="/images/fintrack-logo.png"
+              alt="Fintrack Logo"
+              width={46}
+              height={46}
+              className="me-3 logo-img"
+            />
+            <div className="d-flex flex-column">
+              <span className="fs-5 fw-bold logo-text lh-1">Fintrack</span>
+              <span className="logo-subtext mt-1">Personal finance</span>
+            </div>
+          </Link>
+        </div>
 
-          {/* Navigation Menu */}
+        {/* Scrollable Navigation Menu Only */}
+        <div style={{ overflowY: "auto", overflowX: "hidden", flexGrow: 1, minHeight: 0 }}>
           <ConfigProvider theme={menuConfigTheme}>
             <Menu
               mode="inline"
@@ -532,8 +533,8 @@ export default function Sidebar() {
           </ConfigProvider>
         </div>
 
-        {/* User Footer Section */}
-        <div className="px-3 py-3 border-top d-flex align-items-center justify-content-between gap-2">
+        {/* Fixed User Footer Section (never scrolls) */}
+        <div className="px-3 py-3 border-top d-flex align-items-center justify-content-between gap-2 flex-shrink-0">
           <button
             type="button"
             className="sidebar-profile-btn"
