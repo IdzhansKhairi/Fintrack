@@ -551,6 +551,7 @@ export default function DebtsPage() {
           .select("*")
           .eq("user_id", user.id)
           .eq("is_active", true)
+          .order("debts_date", { ascending: false })
           .order("created_at", { ascending: false }),
         supabase
           .from("accounts")
@@ -789,22 +790,28 @@ export default function DebtsPage() {
 
   const filteredDebts = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return debts.filter((d) => {
-      if (typeFilter !== "all" && d.debts_type !== typeFilter) return false;
-      if (statusFilter !== "all" && d.status !== statusFilter) return false;
-      if (q) {
-        const haystack = [
-          d.debts_person,
-          d.debts_name,
-          d.debts_notes || "",
-          d.debts_type,
-        ]
-          .join(" ")
-          .toLowerCase();
-        if (!haystack.includes(q)) return false;
-      }
-      return true;
-    });
+    return debts
+      .filter((d) => {
+        if (typeFilter !== "all" && d.debts_type !== typeFilter) return false;
+        if (statusFilter !== "all" && d.status !== statusFilter) return false;
+        if (q) {
+          const haystack = [
+            d.debts_person,
+            d.debts_name,
+            d.debts_notes || "",
+            d.debts_type,
+          ]
+            .join(" ")
+            .toLowerCase();
+          if (!haystack.includes(q)) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const dateCmp = (b.debts_date || "").localeCompare(a.debts_date || "");
+        if (dateCmp !== 0) return dateCmp;
+        return (b.created_at || "").localeCompare(a.created_at || "");
+      });
   }, [debts, typeFilter, statusFilter, searchQuery]);
 
   // ==========================================
