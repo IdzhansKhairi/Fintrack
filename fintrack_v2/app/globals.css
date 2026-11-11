@@ -249,12 +249,22 @@ h3 {
 }
 
 @media (max-width: 575.98px) {
-  .fintrack-modal-actions {
-    flex-direction: column-reverse;
-    width: 100%;
+  .fintrack-modal-actions,
+  .fintrack-modal-split-actions,
+  .fintrack-modal div:has(> .fintrack-modal-cancel-btn),
+  .fintrack-Account-Modal div:has(> .fintrack-modal-cancel-btn) {
+    flex-direction: column-reverse !important;
+    align-items: stretch !important;
+    width: 100% !important;
   }
 
-  .fintrack-modal-actions .ant-btn {
+  .fintrack-modal-actions > .ant-btn,
+  .fintrack-modal-actions > button,
+  .fintrack-modal-split-actions > button,
+  .fintrack-modal div:has(> .fintrack-modal-cancel-btn) > .ant-btn,
+  .fintrack-modal div:has(> .fintrack-modal-cancel-btn) > button,
+  .fintrack-Account-Modal div:has(> .fintrack-modal-cancel-btn) > .ant-btn,
+  .fintrack-Account-Modal div:has(> .fintrack-modal-cancel-btn) > button {
     width: 100% !important;
   }
 }

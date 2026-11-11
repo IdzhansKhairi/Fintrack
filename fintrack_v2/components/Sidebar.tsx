@@ -789,7 +789,7 @@ export default function Sidebar() {
             </div>
           </div>
 
-          <div className="d-flex justify-content-end gap-2 mt-2 pt-2 border-top">
+          <div className="d-flex justify-content-end gap-2 mt-2 pt-2 border-top fintrack-modal-actions">
             <button
               type="button"
               className="btn btn-sm border-0"

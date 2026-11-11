@@ -3131,7 +3131,7 @@ export default function CommitmentsPage() {
                   </div>
                 )}
 
-                <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 fintrack-modal-split-actions">
                   {activeCellTarget.rowKind === "commitment" ? (
                     <button
                       type="button"
@@ -3151,7 +3151,7 @@ export default function CommitmentsPage() {
                       Skip / waive month
                     </button>
                   ) : (
-                    <span />
+                    <span className="d-none d-sm-inline" />
                   )}
 
                   <div className="d-flex gap-2">
