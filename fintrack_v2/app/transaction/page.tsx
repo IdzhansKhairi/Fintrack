@@ -2638,7 +2638,7 @@ export default function TransactionPage() {
               </div>
             </div>
 
-            <div className="d-flex justify-content-center gap-2">
+            <div className="fintrack-modal-actions">
               <Button
                 className="fintrack-modal-cancel-btn"
                 onClick={() => setCancellingTx(null)}

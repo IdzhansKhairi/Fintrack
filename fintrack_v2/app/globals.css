@@ -242,6 +242,23 @@ h3 {
   color: #ffffff !important;
 }
 
+.fintrack-modal-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+@media (max-width: 575.98px) {
+  .fintrack-modal-actions {
+    flex-direction: column-reverse;
+    width: 100%;
+  }
+
+  .fintrack-modal-actions .ant-btn {
+    width: 100% !important;
+  }
+}
+
 /* Custom form inputs inside Fintrack modals */
 .fintrack-modal-input {
   width: 100% !important;
