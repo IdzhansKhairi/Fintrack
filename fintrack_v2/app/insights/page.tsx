@@ -20,7 +20,30 @@ import BottomToast, { BottomToastType } from "@/components/BottomToast";
 // 1. TYPE DEFINITIONS
 // =============================================================================
 
-type TimeframeMode = "weekly" | "monthly" | "yearly";
+type TimeframeMode = "daily" | "weekly" | "monthly";
+type DailyExpenseScope = "lifestyle" | "all";
+
+interface SelectedBarFilter {
+  key: string;
+  label: string;
+  mode: TimeframeMode;
+  dateStr?: string; // YYYY-MM-DD (daily)
+  weekIdx?: number; // 0..3 (weekly)
+  ymPrefix?: string; // YYYY-MM (monthly)
+}
+
+// Unified shape for every bar in the Daily / Weekly / Monthly expense chart
+interface ChartBarDatum {
+  barKey: string;
+  label: string;
+  shortLabel: string;
+  fullDateLabel: string;
+  income: number;
+  expense: number;
+  dateStr?: string; // daily
+  weekIdx?: number; // weekly
+  ymPrefix?: string; // monthly
+}
 
 interface TransactionRecord {
   transaction_id: string;
@@ -90,6 +113,31 @@ const SHORT_MONTH_NAMES = [
   "Dec",
 ];
 
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+const EXCLUDED_DAILY_LIFESTYLE_CATEGORIES = new Set([
+  "Commitment",
+  "Commitments",
+  "Financing / Installment",
+  "Financing Installment",
+  "Debt / Lending",
+  "Debt Repayment",
+  "Credit Card Payment",
+]);
+
 const CATEGORY_COLORS: Record<string, string> = {
   "Food & Drinks": "#3e8e5e",
   "Groceries": "#16a34a",
@@ -121,6 +169,18 @@ function isCreditCardSettlement(tx: TransactionRecord): boolean {
   );
 }
 
+/**
+ * Returns true if the expense is a discretionary/lifestyle daily expense
+ * (excludes commitments, financing installments, debt lending/repayment, and card bill settlements).
+ */
+function isLifestyleDailyExpense(tx: TransactionRecord): boolean {
+  if (tx.transaction_type !== "expense" || isCreditCardSettlement(tx)) {
+    return false;
+  }
+  const cat = (tx.expense_category || "").trim();
+  return !EXCLUDED_DAILY_LIFESTYLE_CATEGORIES.has(cat);
+}
+
 function getCategoryColor(cat: string): string {
   return CATEGORY_COLORS[cat] || DEFAULT_COLOR;
 }
@@ -137,6 +197,15 @@ function formatDateDisplay(isoDate: string | null | undefined): string {
   const parts = isoDate.split("-");
   if (parts.length !== 3) return isoDate;
   return `${parts[2]}-${parts[1]}-${parts[0]}`;
+}
+
+function formatShortMonthDate(isoDate: string | null | undefined): string {
+  if (!isoDate) return "";
+  const parts = isoDate.slice(0, 10).split("-");
+  if (parts.length !== 3) return isoDate;
+  const monthIdx = parseInt(parts[1], 10) - 1;
+  const monthName = SHORT_MONTH_NAMES[monthIdx] || parts[1];
+  return `${parts[2]} ${monthName} ${parts[0]}`;
 }
 
 const panelCardStyle: React.CSSProperties = {
@@ -156,6 +225,8 @@ export default function InsightsPage() {
 
   const [loading, setLoading] = useState<boolean>(true);
   const [timeframe, setTimeframe] = useState<TimeframeMode>("monthly");
+  const [dailyExpenseScope, setDailyExpenseScope] =
+    useState<DailyExpenseScope>("lifestyle");
 
   // Selected date anchor (defaults to current year & month)
   const [selectedYear, setSelectedYear] = useState<number>(() =>
@@ -166,9 +237,13 @@ export default function InsightsPage() {
   ); // 1..12
 
   // Category drilldown filter (null = all categories)
-  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string | null>(
-    null
-  );
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<
+    string | null
+  >(null);
+
+  // Bar selection filter across Daily, Weekly, and Monthly charts
+  const [selectedBarFilter, setSelectedBarFilter] =
+    useState<SelectedBarFilter | null>(null);
 
   // Raw data from Supabase
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
@@ -293,16 +368,12 @@ export default function InsightsPage() {
     return `${selectedYear}-${String(selectedMonth).padStart(2, "0")}`;
   }, [selectedYear, selectedMonth]);
 
-  // Transactions belonging to the currently selected month/period
+  // Transactions belonging to the currently selected month
   const currentPeriodTransactions = useMemo(() => {
-    return transactions.filter((tx) => {
-      if (timeframe === "yearly") {
-        return tx.transaction_date.startsWith(`${selectedYear}-`);
-      }
-      // monthly and weekly analyze the selected month
-      return tx.transaction_date.startsWith(targetYmPrefix);
-    });
-  }, [transactions, timeframe, selectedYear, targetYmPrefix]);
+    return transactions.filter((tx) =>
+      tx.transaction_date.startsWith(targetYmPrefix)
+    );
+  }, [transactions, targetYmPrefix]);
 
   // ===========================================================================
   // SECTION 1: FINANCIAL SCORECARD METRICS (EARNED, SPENT, LEFTOVER)
@@ -333,17 +404,201 @@ export default function InsightsPage() {
   }, [currentPeriodTransactions]);
 
   // ===========================================================================
-  // SECTION 2: BAR CHART DATA (INCOME VS EXPENSE)
+  // SECTION 2: BAR CHART DATA (DAILY / WEEKLY / MONTHLY)
   // ===========================================================================
 
-  const barChartData = useMemo(() => {
+  const daysInSelectedMonth = useMemo(() => {
+    return new Date(selectedYear, selectedMonth, 0).getDate();
+  }, [selectedYear, selectedMonth]);
+
+  // Daily mode shows a 7-day rolling window (last 7 days up to today for current month, or last 7 days of selected month)
+  const dailyChartData = useMemo(() => {
+    const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonth = now.getMonth() + 1;
+    const curDay = now.getDate();
+
+    let anchorDay = daysInSelectedMonth;
+    if (selectedYear === curYear && selectedMonth === curMonth) {
+      anchorDay = Math.min(daysInSelectedMonth, curDay);
+    }
+
+    const days: {
+      barKey: string;
+      label: string;
+      shortLabel: string;
+      dateStr: string;
+      fullDateLabel: string;
+      income: number;
+      expense: number;
+    }[] = [];
+
+    for (let offset = 6; offset >= 0; offset--) {
+      const d = new Date(selectedYear, selectedMonth - 1, anchorDay - offset);
+      const y = d.getFullYear();
+      const m = d.getMonth() + 1;
+      const dayNum = d.getDate();
+      const dayPadded = String(dayNum).padStart(2, "0");
+      const mPadded = String(m).padStart(2, "0");
+      const dateStr = `${y}-${mPadded}-${dayPadded}`;
+      const shortMonth = SHORT_MONTH_NAMES[m - 1];
+
+      days.push({
+        barKey: dateStr,
+        label: `${dayPadded} ${shortMonth}`,
+        shortLabel: `${dayPadded} ${shortMonth}`,
+        dateStr,
+        fullDateLabel: `${dayPadded} ${shortMonth} ${y}`,
+        income: 0,
+        expense: 0,
+      });
+    }
+
+    const dayMap = new Map(days.map((d) => [d.dateStr, d]));
+
+    for (const tx of transactions) {
+      const bucket = dayMap.get(tx.transaction_date);
+      if (!bucket) continue;
+      const amt = Number(tx.amount || 0);
+      if (tx.transaction_type === "income") {
+        bucket.income += amt;
+      } else if (tx.transaction_type === "expense") {
+        const includeExpense =
+          dailyExpenseScope === "lifestyle"
+            ? isLifestyleDailyExpense(tx)
+            : !isCreditCardSettlement(tx);
+        if (includeExpense) {
+          bucket.expense += amt;
+        }
+      }
+    }
+
+    return days.map((d) => ({
+      ...d,
+      income: Number(d.income.toFixed(2)),
+      expense: Number(d.expense.toFixed(2)),
+    }));
+  }, [
+    daysInSelectedMonth,
+    selectedMonth,
+    selectedYear,
+    transactions,
+    dailyExpenseScope,
+  ]);
+
+  // Daily summary stats are based on the WHOLE selected month (not just the 7-day chart window):
+  // Daily average = month-to-date total ÷ days elapsed; Highest day = highest day in the month.
+  const dailyStats = useMemo(() => {
+    const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonth = now.getMonth() + 1;
+    const curDay = now.getDate();
+
+    let daysElapsed = daysInSelectedMonth;
+    if (selectedYear === curYear && selectedMonth === curMonth) {
+      daysElapsed = Math.min(daysInSelectedMonth, curDay);
+    } else if (
+      selectedYear > curYear ||
+      (selectedYear === curYear && selectedMonth > curMonth)
+    ) {
+      daysElapsed = 0;
+    }
+
+    const dayTotals = new Map<string, number>();
+    let totalExpense = 0;
+
+    for (const tx of currentPeriodTransactions) {
+      if (tx.transaction_type !== "expense") continue;
+      const include =
+        dailyExpenseScope === "lifestyle"
+          ? isLifestyleDailyExpense(tx)
+          : !isCreditCardSettlement(tx);
+      if (!include) continue;
+      const amt = Number(tx.amount || 0);
+      totalExpense += amt;
+      dayTotals.set(
+        tx.transaction_date,
+        (dayTotals.get(tx.transaction_date) || 0) + amt
+      );
+    }
+
+    let peakDay: { label: string; dateStr: string; amount: number } | null = null;
+    dayTotals.forEach((amount, dateStr) => {
+      if (amount > 0 && (!peakDay || amount > peakDay.amount)) {
+        const [, m, d] = dateStr.split("-");
+        peakDay = {
+          label: `${d} ${SHORT_MONTH_NAMES[Number(m) - 1]}`,
+          dateStr,
+          amount: Number(amount.toFixed(2)),
+        };
+      }
+    });
+
+    const dailyAverage = daysElapsed > 0 ? totalExpense / daysElapsed : 0;
+
+    return {
+      totalExpense: Number(totalExpense.toFixed(2)),
+      dailyAverage: Number(dailyAverage.toFixed(2)),
+      peakDay: peakDay as { label: string; dateStr: string; amount: number } | null,
+      daysElapsed,
+    };
+  }, [
+    currentPeriodTransactions,
+    dailyExpenseScope,
+    daysInSelectedMonth,
+    selectedYear,
+    selectedMonth,
+  ]);
+
+  const barChartData = useMemo((): ChartBarDatum[] => {
+    const shouldIncludeExpense = (tx: TransactionRecord) =>
+      dailyExpenseScope === "lifestyle"
+        ? isLifestyleDailyExpense(tx)
+        : !isCreditCardSettlement(tx);
+
+    if (timeframe === "daily") {
+      return dailyChartData;
+    }
+
     if (timeframe === "weekly") {
       // Divide the selected month into 4 weeks (Days 1-7, 8-14, 15-21, 22+)
       const weeks = [
-        { label: "Week 1 (1-7)", income: 0, expense: 0 },
-        { label: "Week 2 (8-14)", income: 0, expense: 0 },
-        { label: "Week 3 (15-21)", income: 0, expense: 0 },
-        { label: "Week 4 (22+)", income: 0, expense: 0 },
+        {
+          barKey: "week-0",
+          weekIdx: 0,
+          label: "Week 1",
+          shortLabel: "Week 1",
+          fullDateLabel: `Week 1 (01–07 ${SHORT_MONTH_NAMES[selectedMonth - 1]} ${selectedYear})`,
+          income: 0,
+          expense: 0,
+        },
+        {
+          barKey: "week-1",
+          weekIdx: 1,
+          label: "Week 2",
+          shortLabel: "Week 2",
+          fullDateLabel: `Week 2 (08–14 ${SHORT_MONTH_NAMES[selectedMonth - 1]} ${selectedYear})`,
+          income: 0,
+          expense: 0,
+        },
+        {
+          barKey: "week-2",
+          weekIdx: 2,
+          label: "Week 3",
+          shortLabel: "Week 3",
+          fullDateLabel: `Week 3 (15–21 ${SHORT_MONTH_NAMES[selectedMonth - 1]} ${selectedYear})`,
+          income: 0,
+          expense: 0,
+        },
+        {
+          barKey: "week-3",
+          weekIdx: 3,
+          label: "Week 4",
+          shortLabel: "Week 4",
+          fullDateLabel: `Week 4 (22–${daysInSelectedMonth} ${SHORT_MONTH_NAMES[selectedMonth - 1]} ${selectedYear})`,
+          income: 0,
+          expense: 0,
+        },
       ];
 
       for (const tx of currentPeriodTransactions) {
@@ -358,54 +613,29 @@ export default function InsightsPage() {
           weeks[weekIdx].income += amt;
         } else if (
           tx.transaction_type === "expense" &&
-          !isCreditCardSettlement(tx)
+          shouldIncludeExpense(tx)
         ) {
           weeks[weekIdx].expense += amt;
         }
       }
 
       return weeks.map((w) => ({
+        barKey: w.barKey,
+        weekIdx: w.weekIdx,
         label: w.label,
+        shortLabel: w.shortLabel,
+        fullDateLabel: w.fullDateLabel,
         income: Number(w.income.toFixed(2)),
         expense: Number(w.expense.toFixed(2)),
       }));
     }
 
-    if (timeframe === "yearly") {
-      // 12 months for the selected year
-      const months = SHORT_MONTH_NAMES.map((name, idx) => ({
-        label: name,
-        ymPrefix: `${selectedYear}-${String(idx + 1).padStart(2, "0")}`,
-        income: 0,
-        expense: 0,
-      }));
-
-      const monthMap = new Map(months.map((m) => [m.ymPrefix, m]));
-
-      for (const tx of transactions) {
-        const ym = tx.transaction_date.slice(0, 7);
-        const bucket = monthMap.get(ym);
-        if (bucket) {
-          const amt = Number(tx.amount || 0);
-          if (tx.transaction_type === "income") bucket.income += amt;
-          else if (
-            tx.transaction_type === "expense" &&
-            !isCreditCardSettlement(tx)
-          )
-            bucket.expense += amt;
-        }
-      }
-
-      return months.map((m) => ({
-        label: m.label,
-        income: Number(m.income.toFixed(2)),
-        expense: Number(m.expense.toFixed(2)),
-      }));
-    }
-
     // Default: Monthly mode (shows rolling 7 months ending at selected month)
     const rolling: {
+      barKey: string;
       label: string;
+      shortLabel: string;
+      fullDateLabel: string;
       ymPrefix: string;
       income: number;
       expense: number;
@@ -415,9 +645,13 @@ export default function InsightsPage() {
       const d = new Date(selectedYear, selectedMonth - 1 - offset, 1);
       const y = d.getFullYear();
       const m = d.getMonth() + 1;
+      const ymPrefix = `${y}-${String(m).padStart(2, "0")}`;
       rolling.push({
+        barKey: ymPrefix,
         label: SHORT_MONTH_NAMES[d.getMonth()],
-        ymPrefix: `${y}-${String(m).padStart(2, "0")}`,
+        shortLabel: `${SHORT_MONTH_NAMES[d.getMonth()]} ${y}`,
+        fullDateLabel: `${MONTH_NAMES[d.getMonth()]} ${y}`,
+        ymPrefix,
         income: 0,
         expense: 0,
       });
@@ -433,45 +667,223 @@ export default function InsightsPage() {
         if (tx.transaction_type === "income") bucket.income += amt;
         else if (
           tx.transaction_type === "expense" &&
-          !isCreditCardSettlement(tx)
+          shouldIncludeExpense(tx)
         )
           bucket.expense += amt;
       }
     }
 
     return rolling.map((r) => ({
+      barKey: r.barKey,
+      ymPrefix: r.ymPrefix,
       label: r.label,
+      shortLabel: r.shortLabel,
+      fullDateLabel: r.fullDateLabel,
       income: Number(r.income.toFixed(2)),
       expense: Number(r.expense.toFixed(2)),
     }));
   }, [
     timeframe,
+    dailyChartData,
+    dailyExpenseScope,
+    daysInSelectedMonth,
     selectedYear,
     selectedMonth,
     currentPeriodTransactions,
     transactions,
   ]);
 
+  const chartSummaryStats = useMemo(() => {
+    const periodLabel = `${SHORT_MONTH_NAMES[selectedMonth - 1]} ${selectedYear}`;
+
+    if (timeframe === "daily") {
+      return {
+        avgTitle: "Daily average",
+        avgAmount: dailyStats.dailyAverage,
+        avgUnit: "/ day",
+        avgCaption: `${periodLabel} · ${dailyStats.daysElapsed} ${
+          dailyStats.daysElapsed === 1 ? "day" : "days"
+        }`,
+        peakTitle: "Highest day",
+        peakLabel: dailyStats.peakDay ? dailyStats.peakDay.label : null,
+        peakAmount: dailyStats.peakDay ? dailyStats.peakDay.amount : 0,
+        peakCaption: `In ${periodLabel}`,
+      };
+    }
+
+    const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonth = now.getMonth() + 1;
+    const curDay = now.getDate();
+
+    if (timeframe === "weekly") {
+      let weeksElapsed = 4;
+      if (selectedYear === curYear && selectedMonth === curMonth) {
+        if (curDay <= 7) weeksElapsed = 1;
+        else if (curDay <= 14) weeksElapsed = 2;
+        else if (curDay <= 21) weeksElapsed = 3;
+        else weeksElapsed = 4;
+      } else if (
+        selectedYear > curYear ||
+        (selectedYear === curYear && selectedMonth > curMonth)
+      ) {
+        weeksElapsed = 0;
+      }
+
+      let total = 0;
+      let peak: { label: string; amount: number } | null = null;
+
+      barChartData.forEach((item) => {
+        total += item.expense;
+        const wkLabel =
+          "shortLabel" in item && item.shortLabel
+            ? String(item.shortLabel)
+            : item.label;
+        if (item.expense > 0 && (!peak || item.expense > peak.amount)) {
+          peak = { label: wkLabel, amount: item.expense };
+        }
+      });
+
+      const avg = weeksElapsed > 0 ? total / weeksElapsed : 0;
+      return {
+        avgTitle: "Weekly average",
+        avgAmount: Number(avg.toFixed(2)),
+        avgUnit: "/ wk",
+        avgCaption: `${periodLabel} · ${weeksElapsed} ${
+          weeksElapsed === 1 ? "week" : "weeks"
+        }`,
+        peakTitle: "Highest week",
+        peakLabel: peak ? (peak as { label: string; amount: number }).label : null,
+        peakAmount: peak ? (peak as { label: string; amount: number }).amount : 0,
+        peakCaption: `In ${periodLabel}`,
+      };
+    }
+
+    // Monthly mode (7-month rolling window)
+    // Average = total of COMPLETED months that have data ÷ number of those months.
+    // Excludes the current in-progress month and empty months before the user started tracking.
+    const currentYm = `${curYear}-${String(curMonth).padStart(2, "0")}`;
+    let total = 0;
+    let countedMonths = 0;
+    let peak: { label: string; amount: number } | null = null;
+
+    barChartData.forEach((item) => {
+      const moLabel =
+        "shortLabel" in item && item.shortLabel
+          ? String(item.shortLabel)
+          : item.label;
+      if (item.expense > 0 && (!peak || item.expense > peak.amount)) {
+        peak = { label: moLabel, amount: item.expense };
+      }
+      const ym = "ymPrefix" in item ? String(item.ymPrefix) : "";
+      const isCompleted = ym !== "" && ym < currentYm;
+      if (isCompleted && item.expense > 0) {
+        total += item.expense;
+        countedMonths += 1;
+      }
+    });
+
+    const avg = countedMonths > 0 ? total / countedMonths : 0;
+    return {
+      avgTitle: "Monthly average",
+      avgAmount: Number(avg.toFixed(2)),
+      avgUnit: "/ mo",
+      avgCaption:
+        countedMonths > 0
+          ? `Avg of ${countedMonths} completed ${
+              countedMonths === 1 ? "month" : "months"
+            }`
+          : "No completed months yet",
+      peakTitle: "Highest month",
+      peakLabel: peak ? (peak as { label: string; amount: number }).label : null,
+      peakAmount: peak ? (peak as { label: string; amount: number }).amount : 0,
+      peakCaption: "Last 7 months",
+    };
+  }, [timeframe, dailyStats, barChartData, selectedYear, selectedMonth]);
+
   // ===========================================================================
   // SECTION 3: SPENDING BY CATEGORY (DONUT & RANKED METERS)
   // ===========================================================================
 
+  // Transactions scoped to the currently clicked bar (Day / Week / Month) or the full selected month
+  const activeBreakdownTransactions = useMemo(() => {
+    if (!selectedBarFilter) {
+      return currentPeriodTransactions.filter(
+        (tx) => tx.transaction_type === "expense" && !isCreditCardSettlement(tx)
+      );
+    }
+
+    const shouldIncludeByScope = (tx: TransactionRecord) =>
+      dailyExpenseScope === "lifestyle"
+        ? isLifestyleDailyExpense(tx)
+        : !isCreditCardSettlement(tx);
+
+    if (selectedBarFilter.mode === "daily" && selectedBarFilter.dateStr) {
+      return transactions.filter(
+        (tx) =>
+          tx.transaction_type === "expense" &&
+          tx.transaction_date === selectedBarFilter.dateStr &&
+          shouldIncludeByScope(tx)
+      );
+    }
+
+    if (
+      selectedBarFilter.mode === "weekly" &&
+      typeof selectedBarFilter.weekIdx === "number"
+    ) {
+      return currentPeriodTransactions.filter((tx) => {
+        if (tx.transaction_type !== "expense" || !shouldIncludeByScope(tx)) {
+          return false;
+        }
+        const day = Number(tx.transaction_date.split("-")[2]);
+        let wIdx = 3;
+        if (day <= 7) wIdx = 0;
+        else if (day <= 14) wIdx = 1;
+        else if (day <= 21) wIdx = 2;
+        return wIdx === selectedBarFilter.weekIdx;
+      });
+    }
+
+    if (selectedBarFilter.mode === "monthly" && selectedBarFilter.ymPrefix) {
+      return transactions.filter(
+        (tx) =>
+          tx.transaction_type === "expense" &&
+          tx.transaction_date.startsWith(selectedBarFilter.ymPrefix!) &&
+          shouldIncludeByScope(tx)
+      );
+    }
+
+    return currentPeriodTransactions.filter(
+      (tx) => tx.transaction_type === "expense" && !isCreditCardSettlement(tx)
+    );
+  }, [
+    selectedBarFilter,
+    currentPeriodTransactions,
+    transactions,
+    dailyExpenseScope,
+  ]);
+
+  const activeCategoryTotalExpense = useMemo(() => {
+    return activeBreakdownTransactions.reduce(
+      (sum, tx) => sum + Number(tx.amount || 0),
+      0
+    );
+  }, [activeBreakdownTransactions]);
+
   const categorySpendingData = useMemo(() => {
     const catMap = new Map<string, { amount: number; count: number }>();
 
-    for (const tx of currentPeriodTransactions) {
-      if (tx.transaction_type === "expense" && !isCreditCardSettlement(tx)) {
-        const cat = tx.expense_category?.trim() || "Others";
-        const amt = Number(tx.amount || 0);
-        const existing = catMap.get(cat) || { amount: 0, count: 0 };
-        catMap.set(cat, {
-          amount: existing.amount + amt,
-          count: existing.count + 1,
-        });
-      }
+    for (const tx of activeBreakdownTransactions) {
+      const cat = tx.expense_category?.trim() || "Others";
+      const amt = Number(tx.amount || 0);
+      const existing = catMap.get(cat) || { amount: 0, count: 0 };
+      catMap.set(cat, {
+        amount: existing.amount + amt,
+        count: existing.count + 1,
+      });
     }
 
-    const totalExpense = scorecard.expense;
+    const totalExpense = activeCategoryTotalExpense;
 
     const list = Array.from(catMap.entries()).map(([name, data]) => {
       const pct = totalExpense > 0 ? (data.amount / totalExpense) * 100 : 0;
@@ -488,22 +900,19 @@ export default function InsightsPage() {
     // Sort descending by highest spending
     list.sort((a, b) => b.amount - a.amount);
     return list;
-  }, [currentPeriodTransactions, scorecard.expense]);
+  }, [activeBreakdownTransactions, activeCategoryTotalExpense]);
 
-  // Filtered transactions for the drill-down section
+  // Filtered transactions when drilling down into a specific Category
   const drilldownTransactions = useMemo(() => {
-    if (!selectedCategoryFilter) {
-      return currentPeriodTransactions.filter(
-        (t) => t.transaction_type === "expense" && !isCreditCardSettlement(t)
-      );
-    }
-    return currentPeriodTransactions.filter(
-      (t) =>
-        t.transaction_type === "expense" &&
-        !isCreditCardSettlement(t) &&
-        (t.expense_category?.trim() || "Others") === selectedCategoryFilter
-    );
-  }, [currentPeriodTransactions, selectedCategoryFilter]);
+    return activeBreakdownTransactions.filter((t) => {
+      if (selectedCategoryFilter) {
+        return (
+          (t.expense_category?.trim() || "Others") === selectedCategoryFilter
+        );
+      }
+      return true;
+    });
+  }, [activeBreakdownTransactions, selectedCategoryFilter]);
 
   // ===========================================================================
   // SECTION 4: FIXED OBLIGATIONS VS FLEXIBLE LIFESTYLE SPENDING
@@ -558,7 +967,12 @@ export default function InsightsPage() {
     }
 
     // Flexible is all other variable expenses
-    const FIXED_CATEGORIES = new Set(["Commitment", "Commitments", "Financing / Installment", "Financing Installment"]);
+    const FIXED_CATEGORIES = new Set([
+      "Commitment",
+      "Commitments",
+      "Financing / Installment",
+      "Financing Installment",
+    ]);
     let flexibleTotal = 0;
     for (const tx of currentPeriodTransactions) {
       if (tx.transaction_type === "expense" && !isCreditCardSettlement(tx)) {
@@ -602,6 +1016,7 @@ export default function InsightsPage() {
       setSelectedMonth((m) => m - 1);
     }
     setSelectedCategoryFilter(null);
+    setSelectedBarFilter(null);
   };
 
   const handleNextMonth = () => {
@@ -612,12 +1027,12 @@ export default function InsightsPage() {
       setSelectedMonth((m) => m + 1);
     }
     setSelectedCategoryFilter(null);
+    setSelectedBarFilter(null);
   };
 
   const displayPeriodLabel = useMemo(() => {
-    if (timeframe === "yearly") return `Year ${selectedYear}`;
     return `${SHORT_MONTH_NAMES[selectedMonth - 1]} ${selectedYear}`;
-  }, [timeframe, selectedMonth, selectedYear]);
+  }, [selectedMonth, selectedYear]);
 
   // ===========================================================================
   // RENDER
@@ -625,9 +1040,9 @@ export default function InsightsPage() {
   return (
     <div className="container-fluid p-0" style={{ paddingBottom: "40px" }}>
       {/* =====================================================================
-          HEADER SECTION: Title + Period Pills + Month Stepper
+          HEADER SECTION: Title + Month Stepper + Timeframe Pills
       ====================================================================== */}
-      <div className="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-4">
+      <div className="d-flex flex-column flex-md-row justify-content-between align-items-stretch align-items-md-center gap-3 mb-4">
         <div>
           <h1 className="page-title">Insights</h1>
           <p className="page-subtitle mb-0">
@@ -636,59 +1051,57 @@ export default function InsightsPage() {
         </div>
 
         {/* Right Controls: Stepper & Timeframe Selector */}
-        <div className="d-flex align-items-center flex-wrap gap-2">
+        <div className="d-flex flex-column flex-sm-row align-items-stretch align-items-sm-center gap-2 flex-shrink-0">
           {/* Month Stepper */}
-          {timeframe !== "yearly" && (
-            <div
-              className="d-flex align-items-center gap-1 bg-white"
+          <div
+            className="d-flex align-items-center justify-content-between gap-1 bg-white"
+            style={{
+              borderRadius: "12px",
+              border: "1px solid #eef2ed",
+              padding: "4px 10px",
+            }}
+          >
+            <button
+              type="button"
+              className="btn btn-sm btn-link p-0 text-decoration-none"
+              style={{ color: "#4b5e52", fontSize: "1rem" }}
+              onClick={handlePrevMonth}
+              title="Previous month"
+            >
+              <i className="bi bi-chevron-left" />
+            </button>
+            <span
               style={{
-                borderRadius: "12px",
-                border: "1px solid #eef2ed",
-                padding: "4px 8px",
+                fontSize: "0.82rem",
+                fontWeight: 600,
+                color: "#1a2e23",
+                padding: "0 8px",
+                whiteSpace: "nowrap",
               }}
             >
-              <button
-                type="button"
-                className="btn btn-sm btn-link p-0 text-decoration-none"
-                style={{ color: "#4b5e52", fontSize: "1rem" }}
-                onClick={handlePrevMonth}
-                title="Previous month"
-              >
-                <i className="bi bi-chevron-left" />
-              </button>
-              <span
-                style={{
-                  fontSize: "0.82rem",
-                  fontWeight: 600,
-                  color: "#1a2e23",
-                  padding: "0 8px",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {displayPeriodLabel}
-              </span>
-              <button
-                type="button"
-                className="btn btn-sm btn-link p-0 text-decoration-none"
-                style={{ color: "#4b5e52", fontSize: "1rem" }}
-                onClick={handleNextMonth}
-                title="Next month"
-              >
-                <i className="bi bi-chevron-right" />
-              </button>
-            </div>
-          )}
+              {displayPeriodLabel}
+            </span>
+            <button
+              type="button"
+              className="btn btn-sm btn-link p-0 text-decoration-none"
+              style={{ color: "#4b5e52", fontSize: "1rem" }}
+              onClick={handleNextMonth}
+              title="Next month"
+            >
+              <i className="bi bi-chevron-right" />
+            </button>
+          </div>
 
-          {/* Timeframe Segment (Weekly / Monthly / Yearly) */}
+          {/* Timeframe Segment (Daily / Weekly / Monthly) */}
           <div
-            className="d-flex bg-white"
+            className="d-flex bg-white fintrack-mobile-full-pills"
             style={{
               borderRadius: "12px",
               border: "1px solid #eef2ed",
               padding: "3px",
             }}
           >
-            {(["weekly", "monthly", "yearly"] as TimeframeMode[]).map((mode) => {
+            {(["daily", "weekly", "monthly"] as TimeframeMode[]).map((mode) => {
               const isActive = timeframe === mode;
               return (
                 <button
@@ -697,6 +1110,7 @@ export default function InsightsPage() {
                   onClick={() => {
                     setTimeframe(mode);
                     setSelectedCategoryFilter(null);
+                    setSelectedBarFilter(null);
                   }}
                   className="btn btn-sm border-0 text-capitalize"
                   style={{
@@ -880,7 +1294,9 @@ export default function InsightsPage() {
               >
                 <i
                   className={`bi ${
-                    scorecard.isSurplus ? "bi-check2-circle" : "bi-exclamation-triangle"
+                    scorecard.isSurplus
+                      ? "bi-check2-circle"
+                      : "bi-exclamation-triangle"
                   }`}
                 />
               </div>
@@ -910,10 +1326,10 @@ export default function InsightsPage() {
       </div>
 
       {/* =====================================================================
-          ROW 2: INCOME VS EXPENSES (BAR CHART) + BY CATEGORY (DONUT CHART)
+          ROW 2: EXPENSE BAR CHART (DAILY / WEEKLY / MONTHLY) + BY CATEGORY (DONUT)
       ====================================================================== */}
       <div className="row g-3 mb-4">
-        {/* Left: Income vs Expenses Grouped Bar Chart */}
+        {/* Left: Expense Bar Chart */}
         <div className="col-12 col-xl-7">
           <div
             style={{
@@ -924,73 +1340,199 @@ export default function InsightsPage() {
               justifyContent: "space-between",
             }}
           >
-            <div className="d-flex justify-content-between align-items-start mb-3">
-              <div>
-                <h5
-                  className="fw-bold mb-0"
-                  style={{ fontSize: "1.02rem", color: "#1a2e23" }}
+            <div>
+              {/* Header: Side-by-side on sm+ (never wraps on Inspect), stacked below title on phone (<576px) */}
+              <div className="d-flex flex-column flex-sm-row justify-content-between align-items-stretch align-items-sm-start gap-2 mb-3">
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <h5
+                    className="fw-bold mb-0"
+                    style={{
+                      fontSize: "1.02rem",
+                      color: "#1a2e23",
+                    }}
+                  >
+                    {timeframe === "daily"
+                      ? "Daily expenses"
+                      : timeframe === "weekly"
+                      ? "Weekly expenses"
+                      : "Monthly expenses"}
+                  </h5>
+                  <div
+                    style={{
+                      fontSize: "0.78rem",
+                      color: "#8b9d90",
+                      marginTop: "2px",
+                    }}
+                  >
+                    {timeframe === "daily"
+                      ? dailyExpenseScope === "lifestyle"
+                        ? "Last 7 days lifestyle spending · Click a bar to filter breakdown"
+                        : "Last 7 days total expenses · Click a bar to filter breakdown"
+                      : timeframe === "weekly"
+                      ? dailyExpenseScope === "lifestyle"
+                        ? `Weekly lifestyle spending in ${displayPeriodLabel} · Click a bar to filter breakdown`
+                        : `All weekly expenses in ${displayPeriodLabel} · Click a bar to filter breakdown`
+                      : dailyExpenseScope === "lifestyle"
+                      ? "Lifestyle spending across the last 7 months · Click a bar to filter breakdown"
+                      : "All expenses across the last 7 months · Click a bar to filter breakdown"}
+                  </div>
+                </div>
+
+                <div
+                  className="d-inline-flex align-items-center p-1 flex-shrink-0 fintrack-mobile-full-pills"
+                  style={{
+                    backgroundColor: "#eef3ed",
+                    borderRadius: "50px",
+                  }}
                 >
-                  Income vs expenses
-                </h5>
-                <span style={{ fontSize: "0.78rem", color: "#8b9d90" }}>
-                  {timeframe === "weekly"
-                    ? `Weekly performance in ${displayPeriodLabel}`
-                    : timeframe === "yearly"
-                    ? `12 months overview for ${selectedYear}`
-                    : "Comparative monthly cash flow"}
-                </span>
+                  {(
+                    [
+                      { key: "lifestyle", label: "Lifestyle only" },
+                      { key: "all", label: "All expenses" },
+                    ] as { key: DailyExpenseScope; label: string }[]
+                  ).map((opt) => {
+                    const active = dailyExpenseScope === opt.key;
+                    return (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() => setDailyExpenseScope(opt.key)}
+                        className="btn btn-sm rounded-pill border-0"
+                        style={{
+                          backgroundColor: active ? "#ffffff" : "transparent",
+                          color: active ? "#1a2e23" : "#52665a",
+                          fontWeight: active ? 600 : 500,
+                          fontSize: "0.74rem",
+                          padding: "4px 12px",
+                          whiteSpace: "nowrap",
+                          boxShadow: active
+                            ? "0 1px 4px rgba(0, 0, 0, 0.06)"
+                            : "none",
+                          transition: "all 0.15s ease",
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
-              {/* Legend */}
-              <div className="d-flex align-items-center gap-3">
-                <div className="d-flex align-items-center gap-1">
-                  <span
+              {/* 2-Card Summary Strip (Average + Highest) — Responsive 50/50 on Phone & Desktop */}
+              <div className="row g-2 mb-3">
+                <div className="col-6">
+                  <div
                     style={{
-                      display: "inline-block",
-                      width: "8px",
-                      height: "8px",
-                      borderRadius: "50%",
-                      backgroundColor: "#3e8e5e",
-                    }}
-                  />
-                  <span
-                    style={{
-                      fontSize: "0.78rem",
-                      color: "#4b5e52",
-                      fontWeight: 500,
+                      backgroundColor: "#f8faf8",
+                      border: "1px solid #eef2ed",
+                      borderRadius: "12px",
+                      padding: "10px 14px",
+                      height: "100%",
                     }}
                   >
-                    Income
-                  </span>
+                    <div
+                      style={{
+                        fontSize: "0.68rem",
+                        color: "#6b7f72",
+                        fontWeight: 500,
+                      }}
+                    >
+                      {chartSummaryStats.avgTitle}
+                    </div>
+                    <div
+                      className="d-flex flex-wrap align-items-baseline column-gap-1"
+                      style={{
+                        fontSize: "0.94rem",
+                        fontWeight: 700,
+                        color: "#1a2e23",
+                      }}
+                    >
+                      <span>RM {formatRM(chartSummaryStats.avgAmount)}</span>
+                      <span
+                        style={{
+                          fontSize: "0.68rem",
+                          fontWeight: 500,
+                          color: "#8b9d90",
+                        }}
+                      >
+                        {chartSummaryStats.avgUnit}
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "0.66rem",
+                        color: "#8b9d90",
+                        marginTop: "2px",
+                      }}
+                    >
+                      {chartSummaryStats.avgCaption}
+                    </div>
+                  </div>
                 </div>
-                <div className="d-flex align-items-center gap-1">
-                  <span
+
+                <div className="col-6">
+                  <div
                     style={{
-                      display: "inline-block",
-                      width: "8px",
-                      height: "8px",
-                      borderRadius: "50%",
-                      backgroundColor: "#173f8f",
-                    }}
-                  />
-                  <span
-                    style={{
-                      fontSize: "0.78rem",
-                      color: "#4b5e52",
-                      fontWeight: 500,
+                      backgroundColor: "#f8faf8",
+                      border: "1px solid #eef2ed",
+                      borderRadius: "12px",
+                      padding: "10px 14px",
+                      height: "100%",
                     }}
                   >
-                    Expense
-                  </span>
+                    <div
+                      style={{
+                        fontSize: "0.68rem",
+                        color: "#6b7f72",
+                        fontWeight: 500,
+                      }}
+                    >
+                      {chartSummaryStats.peakTitle}
+                    </div>
+                    <div
+                      className="d-flex flex-wrap align-items-baseline column-gap-1"
+                      style={{
+                        fontSize: "0.94rem",
+                        fontWeight: 700,
+                        color: "#1a2e23",
+                      }}
+                    >
+                      {chartSummaryStats.peakLabel ? (
+                        <>
+                          <span>{chartSummaryStats.peakLabel}</span>
+                          <span
+                            style={{
+                              fontSize: "0.75rem",
+                              fontWeight: 600,
+                              color: "#dc2626",
+                            }}
+                          >
+                            (RM {formatRM(chartSummaryStats.peakAmount)})
+                          </span>
+                        </>
+                      ) : (
+                        <span>—</span>
+                      )}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "0.66rem",
+                        color: "#8b9d90",
+                        marginTop: "2px",
+                      }}
+                    >
+                      {chartSummaryStats.peakCaption}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div style={{ width: "100%", height: "290px" }}>
+            <div style={{ width: "100%", height: "245px" }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={barChartData}
-                  margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
+                  margin={{ top: 10, right: 8, left: -12, bottom: 0 }}
                   barGap={6}
                 >
                   <CartesianGrid
@@ -1002,14 +1544,74 @@ export default function InsightsPage() {
                     dataKey="label"
                     axisLine={false}
                     tickLine={false}
-                    tick={{ fill: "#6b7f72", fontSize: 12 }}
-                    dy={8}
+                    height={timeframe === "daily" ? 38 : 30}
+                    padding={{ left: 4, right: 4 }}
+                    interval={0}
+                    tick={(props: {
+                      x?: number | string;
+                      y?: number | string;
+                      payload?: { value?: string | number };
+                    }) => {
+                      const x = Number(props.x || 0);
+                      const y = Number(props.y || 0);
+                      const value = String(props.payload?.value ?? "");
+
+                      // Daily: stack "05" over "Nov" so 7 labels never collide on narrow phones
+                      if (timeframe === "daily") {
+                        const [dayPart, monthPart] = value.split(" ");
+                        return (
+                          <g transform={`translate(${x},${y})`}>
+                            <text
+                              x={0}
+                              y={0}
+                              dy={12}
+                              textAnchor="middle"
+                              fill="#4b5e52"
+                              fontSize={11}
+                              fontWeight={600}
+                            >
+                              {dayPart}
+                            </text>
+                            <text
+                              x={0}
+                              y={0}
+                              dy={25}
+                              textAnchor="middle"
+                              fill="#8b9d90"
+                              fontSize={9.5}
+                            >
+                              {monthPart}
+                            </text>
+                          </g>
+                        );
+                      }
+
+                      return (
+                        <g transform={`translate(${x},${y})`}>
+                          <text
+                            x={0}
+                            y={0}
+                            dy={14}
+                            textAnchor="middle"
+                            fill="#6b7f72"
+                            fontSize={11}
+                          >
+                            {value}
+                          </text>
+                        </g>
+                      );
+                    }}
                   />
                   <YAxis
                     axisLine={false}
                     tickLine={false}
-                    tick={{ fill: "#6b7f72", fontSize: 12 }}
-                    width={55}
+                    tick={{ fill: "#6b7f72", fontSize: 11 }}
+                    width={44}
+                    tickFormatter={(val: number) =>
+                      Math.abs(val) >= 1000
+                        ? `${Number((val / 1000).toFixed(1))}k`
+                        : String(val)
+                    }
                   />
                   <RechartsTooltip
                     contentStyle={{
@@ -1020,25 +1622,78 @@ export default function InsightsPage() {
                       fontSize: "0.82rem",
                       color: "#1a2e23",
                     }}
+                    labelFormatter={(label, payload) => {
+                      if (
+                        payload &&
+                        payload.length > 0 &&
+                        payload[0]?.payload?.fullDateLabel
+                      ) {
+                        return payload[0].payload.fullDateLabel;
+                      }
+                      return String(label || "");
+                    }}
                     formatter={(val, name) => [
                       `RM ${formatRM(Number(val || 0))}`,
                       String(name || ""),
                     ]}
                   />
                   <Bar
-                    dataKey="income"
-                    name="Income"
-                    fill="#3e8e5e"
-                    radius={[5, 5, 0, 0]}
-                    maxBarSize={32}
-                  />
-                  <Bar
                     dataKey="expense"
-                    name="Expense"
+                    name={
+                      dailyExpenseScope === "lifestyle"
+                        ? "Lifestyle spent"
+                        : "Total spent"
+                    }
                     fill="#173f8f"
-                    radius={[5, 5, 0, 0]}
-                    maxBarSize={32}
-                  />
+                    radius={[6, 6, 0, 0]}
+                    maxBarSize={36}
+                    style={{ cursor: "pointer" }}
+                    onClick={(barData) => {
+                      const rec = barData as unknown as {
+                        barKey?: string;
+                        fullDateLabel?: string;
+                        dateStr?: string;
+                        weekIdx?: number;
+                        ymPrefix?: string;
+                        payload?: {
+                          barKey?: string;
+                          fullDateLabel?: string;
+                          dateStr?: string;
+                          weekIdx?: number;
+                          ymPrefix?: string;
+                        };
+                      };
+                      const p = rec?.payload || rec;
+                      const clickedKey = p?.barKey;
+                      if (!clickedKey) return;
+
+                      setSelectedCategoryFilter(null);
+                      setSelectedBarFilter((prev) => {
+                        if (prev?.key === clickedKey) return null;
+                        return {
+                          key: clickedKey,
+                          label: p.fullDateLabel || clickedKey,
+                          mode: timeframe,
+                          dateStr: p.dateStr,
+                          weekIdx: p.weekIdx,
+                          ymPrefix: p.ymPrefix,
+                        };
+                      });
+                    }}
+                  >
+                    {barChartData.map((entry) => {
+                      const isSelected = selectedBarFilter?.key === entry.barKey;
+                      return (
+                        <Cell
+                          key={`bar-cell-${entry.barKey}`}
+                          fill={isSelected ? "#3e8e5e" : "#173f8f"}
+                          fillOpacity={
+                            selectedBarFilter && !isSelected ? 0.45 : 1
+                          }
+                        />
+                      );
+                    })}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -1055,22 +1710,48 @@ export default function InsightsPage() {
               flexDirection: "column",
             }}
           >
-            <div className="d-flex justify-content-between align-items-center mb-2">
+            <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
               <h5
                 className="fw-bold mb-0"
                 style={{ fontSize: "1.02rem", color: "#1a2e23" }}
               >
                 By category
               </h5>
-              <span style={{ fontSize: "0.78rem", color: "#8b9d90" }}>
-                {displayPeriodLabel}
-              </span>
+              {selectedBarFilter ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedBarFilter(null);
+                    setSelectedCategoryFilter(null);
+                  }}
+                  className="btn btn-sm rounded-pill border-0 d-inline-flex align-items-center gap-1"
+                  style={{
+                    backgroundColor: "#e6f4ea",
+                    color: "#2b6e46",
+                    fontSize: "0.73rem",
+                    fontWeight: 600,
+                    padding: "3px 10px",
+                  }}
+                  title="Clear bar filter"
+                >
+                  <span>{selectedBarFilter.label}</span>
+                  <i className="bi bi-x-lg" style={{ fontSize: "0.65rem" }} />
+                </button>
+              ) : (
+                <span style={{ fontSize: "0.78rem", color: "#8b9d90" }}>
+                  {displayPeriodLabel}
+                </span>
+              )}
             </div>
 
             {loading ? (
               <div
                 className="d-flex align-items-center justify-content-center flex-grow-1"
-                style={{ minHeight: "220px", color: "#8b9d90", fontSize: "0.85rem" }}
+                style={{
+                  minHeight: "220px",
+                  color: "#8b9d90",
+                  fontSize: "0.85rem",
+                }}
               >
                 Loading categories...
               </div>
@@ -1084,7 +1765,8 @@ export default function InsightsPage() {
                   style={{ fontSize: "1.8rem", color: "#b0c0b5" }}
                 />
                 <div style={{ fontSize: "0.86rem", fontWeight: 500 }}>
-                  No expenses recorded in {displayPeriodLabel}
+                  No expenses recorded in{" "}
+                  {selectedBarFilter ? selectedBarFilter.label : displayPeriodLabel}
                 </div>
               </div>
             ) : (
@@ -1176,7 +1858,7 @@ export default function InsightsPage() {
                         lineHeight: 1.1,
                       }}
                     >
-                      RM {formatRM(scorecard.expense)}
+                      RM {formatRM(activeCategoryTotalExpense)}
                     </div>
                   </div>
                 </div>
@@ -1271,8 +1953,8 @@ export default function InsightsPage() {
               flexDirection: "column",
             }}
           >
-            <div className="d-flex justify-content-between align-items-center mb-3">
-              <div>
+            <div className="d-flex justify-content-between align-items-start gap-2 mb-3">
+              <div style={{ minWidth: 0, flex: 1 }}>
                 <h5
                   className="fw-bold mb-0"
                   style={{ fontSize: "1.02rem", color: "#1a2e23" }}
@@ -1283,22 +1965,35 @@ export default function InsightsPage() {
                 </h5>
                 <span style={{ fontSize: "0.78rem", color: "#8b9d90" }}>
                   {selectedCategoryFilter
-                    ? "Showing filtered transactions · Click reset to view all"
+                    ? selectedBarFilter
+                      ? `Filtered by ${selectedBarFilter.label} · Click Back to categories`
+                      : "Showing filtered transactions · Click Show all to reset"
+                    : selectedBarFilter
+                    ? `Spending in ${selectedBarFilter.label} · Click a category to drill down`
                     : "Ranked by highest spending · Click a category to drill down"}
                 </span>
               </div>
-              {selectedCategoryFilter && (
+              {(selectedCategoryFilter || selectedBarFilter) && (
                 <button
                   type="button"
-                  className="btn btn-sm btn-link p-0 text-decoration-none"
+                  className="btn btn-sm btn-link p-0 text-decoration-none flex-shrink-0"
                   style={{
                     fontSize: "0.8rem",
                     fontWeight: 600,
                     color: "#3e8e5e",
+                    whiteSpace: "nowrap",
                   }}
-                  onClick={() => setSelectedCategoryFilter(null)}
+                  onClick={() => {
+                    if (selectedCategoryFilter) {
+                      setSelectedCategoryFilter(null);
+                    } else {
+                      setSelectedBarFilter(null);
+                    }
+                  }}
                 >
-                  Show all
+                  {selectedCategoryFilter && selectedBarFilter
+                    ? "Back to categories"
+                    : "Show all"}
                 </button>
               )}
             </div>
@@ -1306,7 +2001,11 @@ export default function InsightsPage() {
             {loading ? (
               <div
                 className="d-flex align-items-center justify-content-center flex-grow-1"
-                style={{ minHeight: "220px", color: "#8b9d90", fontSize: "0.85rem" }}
+                style={{
+                  minHeight: "220px",
+                  color: "#8b9d90",
+                  fontSize: "0.85rem",
+                }}
               >
                 Loading breakdown...
               </div>
@@ -1321,6 +2020,7 @@ export default function InsightsPage() {
                 />
                 <div style={{ fontSize: "0.86rem", fontWeight: 500 }}>
                   No spending records found
+                  {selectedBarFilter ? ` in ${selectedBarFilter.label}` : ""}
                 </div>
               </div>
             ) : selectedCategoryFilter ? (
@@ -1377,8 +2077,9 @@ export default function InsightsPage() {
                               color: "#6b7f72",
                             }}
                           >
-                            {formatDateDisplay(tx.transaction_date)}
+                            {formatShortMonthDate(tx.transaction_date)}
                             {tx.transaction_time ? ` · ${tx.transaction_time}` : ""}
+                            {tx.expense_category ? ` · ${tx.expense_category}` : ""}
                           </div>
                         </div>
 
@@ -1399,7 +2100,7 @@ export default function InsightsPage() {
                 )}
               </div>
             ) : (
-              /* Default: Ranked Category Progress Bars */
+              /* Ranked Category Progress Bars (for Selected Bar or Full Month) */
               <div
                 className="d-flex flex-column gap-3"
                 style={{
@@ -1490,7 +2191,8 @@ export default function InsightsPage() {
                         color: "#6b7f72",
                       }}
                     >
-                      {cat.pct}% of total spending
+                      {cat.pct}% of{" "}
+                      {selectedBarFilter ? "period spending" : "total spending"}
                     </div>
                   </div>
                 ))}
@@ -1591,7 +2293,11 @@ export default function InsightsPage() {
                   >
                     <div
                       className="d-flex align-items-center gap-1 mb-1"
-                      style={{ fontSize: "0.76rem", color: "#173f8f", fontWeight: 600 }}
+                      style={{
+                        fontSize: "0.76rem",
+                        color: "#173f8f",
+                        fontWeight: 600,
+                      }}
                     >
                       <i className="bi bi-shield-lock" />
                       <span>Fixed commitments</span>
@@ -1629,7 +2335,11 @@ export default function InsightsPage() {
                   >
                     <div
                       className="d-flex align-items-center gap-1 mb-1"
-                      style={{ fontSize: "0.76rem", color: "#3e8e5e", fontWeight: 600 }}
+                      style={{
+                        fontSize: "0.76rem",
+                        color: "#3e8e5e",
+                        fontWeight: 600,
+                      }}
                     >
                       <i className="bi bi-cup-hot" />
                       <span>Flexible lifestyle</span>
@@ -1670,7 +2380,13 @@ export default function InsightsPage() {
                 className="bi bi-lightbulb"
                 style={{ color: "#3e8e5e", fontSize: "1rem", marginTop: "1px" }}
               />
-              <div style={{ fontSize: "0.78rem", color: "#4b5e52", lineHeight: 1.4 }}>
+              <div
+                style={{
+                  fontSize: "0.78rem",
+                  color: "#4b5e52",
+                  lineHeight: 1.4,
+                }}
+              >
                 <strong>Takeaway:</strong> Before discretionary spending begins,{" "}
                 <strong>RM {formatRM(obligationsSplit.fixedTotal)}</strong> is
                 already committed to mandatory bills and financing. If you ever
