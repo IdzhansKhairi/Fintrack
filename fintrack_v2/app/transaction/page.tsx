@@ -157,6 +157,7 @@ export default function TransactionPage() {
 
   // Filter & Sort State
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [selectedDay, setSelectedDay] = useState<string>("all");
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
   const [selectedYear, setSelectedYear] = useState<string>("all");
   const [selectedType, setSelectedType] = useState<string>("all");
@@ -468,6 +469,68 @@ export default function TransactionPage() {
     fetchData();
   }, [fetchData]);
 
+  const todayStr = getTodayDateString();
+
+  // Spent Today (excludes Commitments, Financing/Installments, Debts, and Credit Card settlements)
+  const spentToday = useMemo(() => {
+    const EXCLUDED_DAILY_CATEGORIES = new Set([
+      "Commitment",
+      "Commitments",
+      "Financing / Installment",
+      "Financing Installment",
+      "Debt / Lending",
+      "Debt Repayment",
+      "Credit Card Payment",
+    ]);
+    let total = 0;
+    transactions.forEach((tx) => {
+      if (
+        tx.is_active &&
+        tx.transaction_type === "expense" &&
+        tx.transaction_date === todayStr &&
+        !tx.target_account_id &&
+        !EXCLUDED_DAILY_CATEGORIES.has((tx.expense_category || "").trim())
+      ) {
+        total += tx.amount;
+      }
+    });
+    return total;
+  }, [transactions, todayStr]);
+
+  // Dynamically derive max days (28, 29, 30, or 31) based on selectedMonth & selectedYear
+  const maxDaysInSelectedMonth = useMemo(() => {
+    if (selectedMonth === "all") return 31;
+    const m = parseInt(selectedMonth, 10);
+    if (m === 2) {
+      if (selectedYear !== "all") {
+        const y = parseInt(selectedYear, 10);
+        return new Date(y, 2, 0).getDate();
+      }
+      return 29;
+    }
+    if ([4, 6, 9, 11].includes(m)) return 30;
+    return 31;
+  }, [selectedMonth, selectedYear]);
+
+  const availableDays = useMemo(() => {
+    return Array.from({ length: maxDaysInSelectedMonth }, (_, i) => {
+      const dayNum = i + 1;
+      return {
+        value: String(dayNum).padStart(2, "0"),
+        label: `${dayNum}`,
+      };
+    });
+  }, [maxDaysInSelectedMonth]);
+
+  useEffect(() => {
+    if (
+      selectedDay !== "all" &&
+      parseInt(selectedDay, 10) > maxDaysInSelectedMonth
+    ) {
+      setSelectedDay("all");
+    }
+  }, [selectedDay, maxDaysInSelectedMonth]);
+
   // Dynamically derive available years from active transactions (sorted descending from latest year)
   const availableYears = useMemo(() => {
     const yearSet = new Set<string>();
@@ -498,6 +561,12 @@ export default function TransactionPage() {
         const matchAcc = tx.account_name.toLowerCase().includes(query);
         const matchSub = (tx.subaccount_name || "").toLowerCase().includes(query);
         if (!matchDesc && !matchCat && !matchAcc && !matchSub) return false;
+      }
+
+      // Day filter
+      if (selectedDay !== "all") {
+        const txDay = tx.transaction_date.slice(8, 10);
+        if (txDay !== selectedDay) return false;
       }
 
       // Month filter
@@ -544,14 +613,13 @@ export default function TransactionPage() {
       }
       return 0;
     });
-  }, [transactions, searchQuery, selectedMonth, selectedYear, selectedType, sortBy]);
+  }, [transactions, searchQuery, selectedDay, selectedMonth, selectedYear, selectedType, sortBy]);
 
   // Summary Totals for Filtered Transactions
   const {
     filteredInflow,
     filteredOutflow,
     cardSettlementOutflow,
-    netAmount,
   } = useMemo(() => {
     let inflow = 0;
     let spendingOutflow = 0;
@@ -577,7 +645,6 @@ export default function TransactionPage() {
       filteredOutflow: effectiveOutflow,
       cardSettlementOutflow:
         spendingOutflow > 0 && ccSettlement > 0 ? ccSettlement : 0,
-      netAmount: inflow - effectiveOutflow,
     };
   }, [filteredTransactions]);
 
@@ -1307,8 +1374,61 @@ export default function TransactionPage() {
 
       {/* 3 Summary Cards */}
       <div className="row g-4 mb-4">
+        {/* Card 1: Spent Today (Gradient Hero Card) */}
         <div className="col-12 col-md-4">
           <div
+            className="h-100 d-flex flex-column justify-content-between text-white"
+            style={{
+              background:
+                "linear-gradient(90deg, #1d5bbf 0%, #3e8879 55%, #5ba77b 100%)",
+              borderRadius: "18px",
+              padding: "20px 24px",
+              boxShadow: "0 4px 14px rgba(29, 91, 191, 0.12)",
+            }}
+          >
+            <div>
+              <div
+                className="d-flex justify-content-between align-items-center"
+                style={{
+                  fontSize: "0.78rem",
+                  color: "rgba(255, 255, 255, 0.82)",
+                  fontWeight: 500,
+                  marginBottom: "6px",
+                }}
+              >
+                <span>Spent today</span>
+                <span style={{ fontSize: "0.72rem" }}>
+                  {formatDisplayDate(todayStr)}
+                </span>
+              </div>
+              <div
+                style={{
+                  fontSize: "1.55rem",
+                  fontWeight: 700,
+                  color: "#ffffff",
+                  lineHeight: 1.2,
+                }}
+              >
+                RM {formatAmount(spentToday)}
+              </div>
+            </div>
+            <div
+              style={{
+                fontSize: "0.7rem",
+                color: "rgba(255, 255, 255, 0.78)",
+                marginTop: "6px",
+                lineHeight: 1.35,
+              }}
+            >
+              Excludes commitments, financing, debts &amp; card bills
+            </div>
+          </div>
+        </div>
+
+        {/* Card 2: Filtered Inflow */}
+        <div className="col-12 col-md-4">
+          <div
+            className="h-100 d-flex flex-column justify-content-center"
             style={{
               backgroundColor: "#ffffff",
               borderRadius: "18px",
@@ -1340,8 +1460,10 @@ export default function TransactionPage() {
           </div>
         </div>
 
+        {/* Card 3: Filtered Outflow */}
         <div className="col-12 col-md-4">
           <div
+            className="h-100 d-flex flex-column justify-content-center"
             style={{
               backgroundColor: "#ffffff",
               borderRadius: "18px",
@@ -1383,42 +1505,51 @@ export default function TransactionPage() {
             )}
           </div>
         </div>
+      </div>
 
-        <div className="col-12 col-md-4">
-          <div
-            style={{
-              backgroundColor: "#ffffff",
-              borderRadius: "18px",
-              padding: "20px 24px",
-              border: "1px solid #eef2ed",
-              boxShadow: "0 2px 10px rgba(0, 0, 0, 0.02)",
-            }}
-          >
-            <div
-              style={{
-                fontSize: "0.78rem",
-                color: "#6b7f72",
-                fontWeight: 500,
-                marginBottom: "6px",
-              }}
-            >
-              Net
-            </div>
-            <div
-              style={{
-                fontSize: "1.55rem",
-                fontWeight: 700,
-                color: netAmount < 0 ? "#dc2626" : "#1a2e23",
-                lineHeight: 1.2,
-              }}
-            >
-              {formatSignedRM(netAmount)}
-            </div>
-          </div>
+      {/* Type Segmented Pill Toggle (All | Expenses | Income) */}
+      <div className="mb-3">
+        <div
+          className="d-flex d-sm-inline-flex align-items-center p-1"
+          style={{
+            backgroundColor: "#eef3ed",
+            borderRadius: "50px",
+          }}
+        >
+          {(
+            [
+              { key: "all", label: "All" },
+              { key: "expense", label: "Expenses" },
+              { key: "income", label: "Income" },
+            ] as { key: string; label: string }[]
+          ).map((tab) => {
+            const active = selectedType === tab.key;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setSelectedType(tab.key)}
+                className="btn btn-sm rounded-pill border-0 flex-fill flex-sm-grow-0"
+                style={{
+                  backgroundColor: active ? "#ffffff" : "transparent",
+                  color: active ? "#1a2e23" : "#52665a",
+                  fontWeight: active ? 600 : 500,
+                  fontSize: "0.78rem",
+                  padding: "6px 18px",
+                  boxShadow: active
+                    ? "0 1px 4px rgba(0, 0, 0, 0.06)"
+                    : "none",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Search & Filter Bar */}
+      {/* Search & Filter Bar (Search | Day | Month | Year | Sort) */}
       <div
         style={{
           backgroundColor: "#ffffff",
@@ -1466,6 +1597,23 @@ export default function TransactionPage() {
             </div>
           </div>
 
+          {/* Dynamic Day Filter (1st position after Search) */}
+          <div className="col-6 col-md-3 col-lg-2">
+            <select
+              className="form-select fintrack-modal-input"
+              value={selectedDay}
+              onChange={(e) => setSelectedDay(e.target.value)}
+              style={{ fontSize: "0.84rem" }}
+            >
+              <option value="all">All days</option>
+              {availableDays.map((d) => (
+                <option key={d.value} value={d.value}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* Month Filter */}
           <div className="col-6 col-md-3 col-lg-2">
             <select
@@ -1496,20 +1644,6 @@ export default function TransactionPage() {
                   {yr}
                 </option>
               ))}
-            </select>
-          </div>
-
-          {/* Type Filter */}
-          <div className="col-6 col-md-3 col-lg-2">
-            <select
-              className="form-select fintrack-modal-input"
-              value={selectedType}
-              onChange={(e) => setSelectedType(e.target.value)}
-              style={{ fontSize: "0.84rem" }}
-            >
-              <option value="all">All types</option>
-              <option value="expense">Expense</option>
-              <option value="income">Income</option>
             </select>
           </div>
 
@@ -1708,7 +1842,7 @@ export default function TransactionPage() {
                     >
                       {transactions.length === 0
                         ? 'Click "+ Add transaction" to log your first income or expense.'
-                        : "Try selecting a different month, year, type, or clearing your search."}
+                        : "Try selecting a different day, month, year, type, or clearing your search."}
                     </p>
                   </td>
                 </tr>
