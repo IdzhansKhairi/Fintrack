@@ -2008,125 +2008,23 @@ export default function TransactionPage() {
                   fontFamily: "var(--font-poppins), 'Poppins', sans-serif",
                 }}
               >
-                <thead>
-                  <tr
-                    style={{
-                      borderBottom: "1px solid #eef2ed",
-                      backgroundColor: "#fcfdfc",
-                    }}
-                  >
-                    <th
-                      style={{
-                        padding: "14px 20px",
-                        fontSize: "0.7rem",
-                        fontWeight: 600,
-                        color: "#6b7f72",
-                        letterSpacing: "0.05em",
-                        textTransform: "uppercase",
-                        border: "none",
-                      }}
-                    >
-                      Time
-                    </th>
-                    <th
-                      style={{
-                        padding: "14px 16px",
-                        fontSize: "0.7rem",
-                        fontWeight: 600,
-                        color: "#6b7f72",
-                        letterSpacing: "0.05em",
-                        textTransform: "uppercase",
-                        border: "none",
-                      }}
-                    >
-                      Description
-                    </th>
-                    <th
-                      style={{
-                        padding: "14px 16px",
-                        fontSize: "0.7rem",
-                        fontWeight: 600,
-                        color: "#6b7f72",
-                        letterSpacing: "0.05em",
-                        textTransform: "uppercase",
-                        border: "none",
-                      }}
-                    >
-                      Category
-                    </th>
-                    <th
-                      style={{
-                        padding: "14px 16px",
-                        fontSize: "0.7rem",
-                        fontWeight: 600,
-                        color: "#6b7f72",
-                        letterSpacing: "0.05em",
-                        textTransform: "uppercase",
-                        border: "none",
-                      }}
-                    >
-                      Account
-                    </th>
-                    <th
-                      style={{
-                        padding: "14px 16px",
-                        fontSize: "0.7rem",
-                        fontWeight: 600,
-                        color: "#6b7f72",
-                        letterSpacing: "0.05em",
-                        textTransform: "uppercase",
-                        border: "none",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      Sub-Account
-                    </th>
-                    <th
-                      className="text-end"
-                      style={{
-                        padding: "14px 16px",
-                        fontSize: "0.7rem",
-                        fontWeight: 600,
-                        color: "#6b7f72",
-                        letterSpacing: "0.05em",
-                        textTransform: "uppercase",
-                        border: "none",
-                      }}
-                    >
-                      Amount
-                    </th>
-                    <th
-                      className="text-end"
-                      style={{
-                        padding: "14px 20px",
-                        fontSize: "0.7rem",
-                        fontWeight: 600,
-                        color: "#6b7f72",
-                        letterSpacing: "0.05em",
-                        textTransform: "uppercase",
-                        border: "none",
-                      }}
-                    >
-                      Action
-                    </th>
-                  </tr>
-                </thead>
                 <tbody>
-                  {groupedTransactions.map((group) => (
+                  {groupedTransactions.map((group, groupIdx) => (
                     <React.Fragment key={group.date}>
                       {/* DATE GROUP HEADER BAR */}
                       <tr
                         style={{
                           backgroundColor: "#eef3ed",
-                          borderTop: "1px solid #e2ebe4",
+                          borderTop:
+                            groupIdx === 0 ? "none" : "1px solid #e2ebe4",
                           borderBottom: "1px solid #e2ebe4",
                         }}
                       >
                         <td
-                          colSpan={7}
+                          colSpan={6}
                           style={{
                             backgroundColor: "#eef3ed",
-                            padding: "8px 20px",
+                            padding: "9px 20px",
                             border: "none",
                             whiteSpace: "nowrap",
                           }}
@@ -2235,12 +2133,13 @@ export default function TransactionPage() {
                                 fontSize: "0.84rem",
                                 color: "#4a5d52",
                                 border: "none",
+                                whiteSpace: "nowrap",
                               }}
                             >
                               {categoryLabel || "—"}
                             </td>
 
-                            {/* ACCOUNT */}
+                            {/* ACCOUNT + INLINE SUB-ACCOUNT PILL */}
                             <td
                               style={{
                                 padding: "14px 16px",
@@ -2249,36 +2148,25 @@ export default function TransactionPage() {
                                 border: "none",
                               }}
                             >
-                              {tx.account_name}
-                            </td>
-
-                            {/* SUB-ACCOUNT */}
-                            <td
-                              style={{
-                                padding: "14px 16px",
-                                fontSize: "0.84rem",
-                                color: tx.subaccount_name ? "#4a5d52" : "#9caea1",
-                                border: "none",
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              {tx.subaccount_name ? (
-                                <span
-                                  style={{
-                                    backgroundColor: "#f3f7f4",
-                                    color: "#2e4738",
-                                    padding: "4px 10px",
-                                    borderRadius: "50px",
-                                    fontSize: "0.76rem",
-                                    fontWeight: 500,
-                                    border: "1px solid #e2ebe4",
-                                  }}
-                                >
-                                  {tx.subaccount_name}
-                                </span>
-                              ) : (
-                                "—"
-                              )}
+                              <div className="d-flex align-items-center flex-wrap gap-2">
+                                <span>{tx.account_name}</span>
+                                {tx.subaccount_name && (
+                                  <span
+                                    style={{
+                                      backgroundColor: "#f3f7f4",
+                                      color: "#2e4738",
+                                      padding: "3px 10px",
+                                      borderRadius: "50px",
+                                      fontSize: "0.74rem",
+                                      fontWeight: 500,
+                                      border: "1px solid #e2ebe4",
+                                      whiteSpace: "nowrap",
+                                    }}
+                                  >
+                                    {tx.subaccount_name}
+                                  </span>
+                                )}
+                              </div>
                             </td>
 
                             {/* AMOUNT */}
