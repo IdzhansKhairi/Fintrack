@@ -558,8 +558,16 @@ export default function InsightsPage() {
     }
 
     // Flexible is all other variable expenses
-    const totalSpent = scorecard.expense;
-    const flexibleTotal = Math.max(0, totalSpent - fixedTotal);
+    const FIXED_CATEGORIES = new Set(["Commitment", "Commitments", "Financing / Installment", "Financing Installment"]);
+    let flexibleTotal = 0;
+    for (const tx of currentPeriodTransactions) {
+      if (tx.transaction_type === "expense" && !isCreditCardSettlement(tx)) {
+        const cat = tx.expense_category?.trim() || "Others";
+        if (!FIXED_CATEGORIES.has(cat)) {
+          flexibleTotal += Number(tx.amount || 0);
+        }
+      }
+    }
     const combined = fixedTotal + flexibleTotal;
 
     const fixedPct = combined > 0 ? Math.round((fixedTotal / combined) * 100) : 50;
@@ -579,7 +587,7 @@ export default function InsightsPage() {
     selectedYear,
     selectedMonth,
     targetYmPrefix,
-    scorecard.expense,
+    currentPeriodTransactions,
   ]);
 
   // ===========================================================================
