@@ -2076,6 +2076,7 @@ export default function TransactionPage() {
                         letterSpacing: "0.05em",
                         textTransform: "uppercase",
                         border: "none",
+                        whiteSpace: "nowrap",
                       }}
                     >
                       Sub-Account
@@ -2258,6 +2259,7 @@ export default function TransactionPage() {
                                 fontSize: "0.84rem",
                                 color: tx.subaccount_name ? "#4a5d52" : "#9caea1",
                                 border: "none",
+                                whiteSpace: "nowrap",
                               }}
                             >
                               {tx.subaccount_name ? (
