@@ -138,11 +138,37 @@ function getCurrentTimeString(): string {
   return `${hours}:${minutes}`;
 }
 
+const SHORT_MONTH_NAMES = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
 function formatDisplayDate(dateStr: string | null | undefined): string {
   if (!dateStr) return "—";
   const parts = dateStr.slice(0, 10).split("-");
   if (parts.length === 3) {
     return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  }
+  return dateStr;
+}
+
+function formatShortMonthDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return "—";
+  const parts = dateStr.slice(0, 10).split("-");
+  if (parts.length === 3) {
+    const monthIdx = parseInt(parts[1], 10) - 1;
+    const monthName = SHORT_MONTH_NAMES[monthIdx] || parts[1];
+    return `${parts[2]} ${monthName} ${parts[0]}`;
   }
   return dateStr;
 }
@@ -614,6 +640,57 @@ export default function TransactionPage() {
       return 0;
     });
   }, [transactions, searchQuery, selectedDay, selectedMonth, selectedYear, selectedType, sortBy]);
+
+  const yesterdayStr = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }, []);
+
+  const formatGroupDateHeader = (dateStr: string) => {
+    const formatted = formatShortMonthDate(dateStr);
+    if (dateStr === todayStr) return `Today · ${formatted}`;
+    if (dateStr === yesterdayStr) return `Yesterday · ${formatted}`;
+    return formatted;
+  };
+
+  // Group filteredTransactions by transaction_date with daily totals (including all transactions in that day)
+  const groupedTransactions = useMemo(() => {
+    const groupsMap = new Map<
+      string,
+      {
+        date: string;
+        items: TransactionRecord[];
+        expenseTotal: number;
+        incomeTotal: number;
+      }
+    >();
+
+    filteredTransactions.forEach((tx) => {
+      const d = tx.transaction_date;
+      let grp = groupsMap.get(d);
+      if (!grp) {
+        grp = {
+          date: d,
+          items: [],
+          expenseTotal: 0,
+          incomeTotal: 0,
+        };
+        groupsMap.set(d, grp);
+      }
+      grp.items.push(tx);
+      if (tx.transaction_type === "income") {
+        grp.incomeTotal += tx.amount;
+      } else {
+        grp.expenseTotal += tx.amount;
+      }
+    });
+
+    return Array.from(groupsMap.values());
+  }, [filteredTransactions]);
 
   // Summary Totals for Filtered Transactions
   const {
@@ -1398,7 +1475,7 @@ export default function TransactionPage() {
               >
                 <span>Spent today</span>
                 <span style={{ fontSize: "0.72rem" }}>
-                  {formatDisplayDate(todayStr)}
+                  {formatShortMonthDate(todayStr)}
                 </span>
               </div>
               <div
@@ -1674,229 +1751,131 @@ export default function TransactionPage() {
           overflow: "hidden",
         }}
       >
-        <div className="table-responsive">
-          <table
-            className="table mb-0 align-middle"
-            style={{
-              borderCollapse: "collapse",
-              fontFamily: "var(--font-poppins), 'Poppins', sans-serif",
-            }}
+        {loading ? (
+          <div
+            className="text-center py-5"
+            style={{ color: "#6b7f72", fontSize: "0.88rem" }}
           >
-            <thead>
-              <tr
-                style={{
-                  borderBottom: "1px solid #eef2ed",
-                  backgroundColor: "#fcfdfc",
-                }}
-              >
-                <th
-                  style={{
-                    padding: "14px 20px",
-                    fontSize: "0.7rem",
-                    fontWeight: 600,
-                    color: "#6b7f72",
-                    letterSpacing: "0.05em",
-                    textTransform: "uppercase",
-                    border: "none",
-                  }}
-                >
-                  Date
-                </th>
-                <th
-                  style={{
-                    padding: "14px 16px",
-                    fontSize: "0.7rem",
-                    fontWeight: 600,
-                    color: "#6b7f72",
-                    letterSpacing: "0.05em",
-                    textTransform: "uppercase",
-                    border: "none",
-                  }}
-                >
-                  Description
-                </th>
-                <th
-                  style={{
-                    padding: "14px 16px",
-                    fontSize: "0.7rem",
-                    fontWeight: 600,
-                    color: "#6b7f72",
-                    letterSpacing: "0.05em",
-                    textTransform: "uppercase",
-                    border: "none",
-                  }}
-                >
-                  Category
-                </th>
-                <th
-                  style={{
-                    padding: "14px 16px",
-                    fontSize: "0.7rem",
-                    fontWeight: 600,
-                    color: "#6b7f72",
-                    letterSpacing: "0.05em",
-                    textTransform: "uppercase",
-                    border: "none",
-                  }}
-                >
-                  Account
-                </th>
-                <th
-                  style={{
-                    padding: "14px 16px",
-                    fontSize: "0.7rem",
-                    fontWeight: 600,
-                    color: "#6b7f72",
-                    letterSpacing: "0.05em",
-                    textTransform: "uppercase",
-                    border: "none",
-                  }}
-                >
-                  Sub-Account
-                </th>
-                <th
-                  className="text-end"
-                  style={{
-                    padding: "14px 16px",
-                    fontSize: "0.7rem",
-                    fontWeight: 600,
-                    color: "#6b7f72",
-                    letterSpacing: "0.05em",
-                    textTransform: "uppercase",
-                    border: "none",
-                  }}
-                >
-                  Amount
-                </th>
-                <th
-                  className="text-end"
-                  style={{
-                    padding: "14px 20px",
-                    fontSize: "0.7rem",
-                    fontWeight: 600,
-                    color: "#6b7f72",
-                    letterSpacing: "0.05em",
-                    textTransform: "uppercase",
-                    border: "none",
-                  }}
-                >
-                  Action
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className="text-center py-5"
-                    style={{ color: "#6b7f72", fontSize: "0.88rem", border: "none" }}
+            <div
+              className="spinner-border spinner-border-sm me-2 text-success"
+              role="status"
+            />
+            Loading your transactions...
+          </div>
+        ) : filteredTransactions.length === 0 ? (
+          <div style={{ padding: "52px 24px", textAlign: "center" }}>
+            <div
+              style={{
+                width: "52px",
+                height: "52px",
+                borderRadius: "14px",
+                backgroundColor: "#eff6f1",
+                color: "#69a980",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "1.35rem",
+                marginBottom: "12px",
+              }}
+            >
+              <i className="bi bi-arrow-left-right" />
+            </div>
+            <h3
+              style={{
+                fontSize: "1.05rem",
+                fontWeight: 700,
+                color: "#1a2e23",
+                marginBottom: "4px",
+              }}
+            >
+              {transactions.length === 0
+                ? "No transactions recorded yet"
+                : "No transactions match your filters"}
+            </h3>
+            <p
+              style={{
+                fontSize: "0.82rem",
+                color: "#6b7f72",
+                marginBottom: 0,
+              }}
+            >
+              {transactions.length === 0
+                ? 'Click "+ Add transaction" to log your first income or expense.'
+                : "Try selecting a different day, month, year, type, or clearing your search."}
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* =====================================================
+                MOBILE MAE-STYLE GROUPED LIST (< 768px)
+                ===================================================== */}
+            <div className="d-md-none">
+              {groupedTransactions.map((group, groupIdx) => (
+                <div key={group.date}>
+                  {/* Date Header Strip */}
+                  <div
+                    className="d-flex justify-content-between align-items-center"
+                    style={{
+                      backgroundColor: "#eef3ed",
+                      borderTop: groupIdx === 0 ? "none" : "1px solid #e2ebe4",
+                      borderBottom: "1px solid #e2ebe4",
+                      padding: "9px 16px",
+                    }}
                   >
-                    <div
-                      className="spinner-border spinner-border-sm me-2 text-success"
-                      role="status"
-                    />
-                    Loading your transactions...
-                  </td>
-                </tr>
-              ) : filteredTransactions.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={7}
-                    style={{ border: "none", padding: "52px 24px", textAlign: "center" }}
-                  >
-                    <div
+                    <span
                       style={{
-                        width: "52px",
-                        height: "52px",
-                        borderRadius: "14px",
-                        backgroundColor: "#eff6f1",
-                        color: "#69a980",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: "1.35rem",
-                        marginBottom: "12px",
+                        fontSize: "0.78rem",
+                        fontWeight: 600,
+                        color: "#4a5d52",
                       }}
                     >
-                      <i className="bi bi-arrow-left-right" />
-                    </div>
-                    <h3
+                      {formatGroupDateHeader(group.date)}
+                    </span>
+                    <div
+                      className="d-flex align-items-center gap-2"
                       style={{
-                        fontSize: "1.05rem",
+                        fontSize: "0.78rem",
                         fontWeight: 700,
-                        color: "#1a2e23",
-                        marginBottom: "4px",
                       }}
                     >
-                      {transactions.length === 0
-                        ? "No transactions recorded yet"
-                        : "No transactions match your filters"}
-                    </h3>
-                    <p
-                      style={{
-                        fontSize: "0.82rem",
-                        color: "#6b7f72",
-                        marginBottom: 0,
-                      }}
-                    >
-                      {transactions.length === 0
-                        ? 'Click "+ Add transaction" to log your first income or expense.'
-                        : "Try selecting a different day, month, year, type, or clearing your search."}
-                    </p>
-                  </td>
-                </tr>
-              ) : (
-                filteredTransactions.map((tx) => {
-                  const isIncome = tx.transaction_type === "income";
-                  const categoryLabel = isIncome
-                    ? tx.income_category
-                    : tx.expense_category;
+                      {group.incomeTotal > 0 && (
+                        <span style={{ color: "#16a34a" }}>
+                          + RM {formatAmount(group.incomeTotal)}
+                        </span>
+                      )}
+                      {group.expenseTotal > 0 && (
+                        <span style={{ color: "#4a5d52" }}>
+                          – RM {formatAmount(group.expenseTotal)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
 
-                  return (
-                    <tr
-                      key={tx.transaction_id}
-                      style={{
-                        borderBottom: "1px solid #f1f5f2",
-                        transition: "background-color 0.15s ease",
-                      }}
-                    >
-                      {/* DATE & TIME */}
-                      <td
+                  {/* Day's Transactions */}
+                  {group.items.map((tx) => {
+                    const isIncome = tx.transaction_type === "income";
+                    const categoryLabel = isIncome
+                      ? tx.income_category
+                      : tx.expense_category;
+
+                    return (
+                      <div
+                        key={tx.transaction_id}
+                        className="d-flex justify-content-between align-items-start gap-3"
                         style={{
-                          padding: "14px 20px",
-                          border: "none",
-                          whiteSpace: "nowrap",
+                          padding: "14px 16px",
+                          borderBottom: "1px solid #f1f5f2",
                         }}
                       >
+                        {/* Left Icon + Stacked Details */}
                         <div
-                          style={{
-                            fontSize: "0.84rem",
-                            fontWeight: 500,
-                            color: "#1a2e23",
-                            lineHeight: 1.3,
-                          }}
+                          className="d-flex align-items-start gap-3"
+                          style={{ minWidth: 0, flex: 1 }}
                         >
-                          {formatDisplayDate(tx.transaction_date)}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: "0.74rem",
-                            color: "#8b9d90",
-                            marginTop: "2px",
-                          }}
-                        >
-                          {tx.transaction_time}
-                        </div>
-                      </td>
-
-                      {/* DESCRIPTION WITH ICON BADGE */}
-                      <td style={{ padding: "14px 16px", border: "none" }}>
-                        <div className="d-flex align-items-center gap-3">
                           <div
                             style={{
-                              width: "32px",
-                              height: "32px",
+                              width: "34px",
+                              height: "34px",
                               borderRadius: "50%",
                               backgroundColor: isIncome ? "#dcfce7" : "#fee2e2",
                               color: isIncome ? "#16a34a" : "#dc2626",
@@ -1905,6 +1884,7 @@ export default function TransactionPage() {
                               justifyContent: "center",
                               fontSize: "0.9rem",
                               flexShrink: 0,
+                              marginTop: "2px",
                             }}
                           >
                             <i
@@ -1915,134 +1895,457 @@ export default function TransactionPage() {
                               }
                             />
                           </div>
-                          <span
-                            style={{
-                              fontSize: "0.87rem",
-                              fontWeight: 600,
-                              color: "#1a2e23",
-                            }}
-                          >
-                            {tx.description}
-                          </span>
+
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div
+                              style={{
+                                fontSize: "0.86rem",
+                                fontWeight: 600,
+                                color: "#1a2e23",
+                                lineHeight: 1.35,
+                                wordBreak: "break-word",
+                              }}
+                            >
+                              {tx.description}
+                            </div>
+
+                            <div
+                              className="d-flex align-items-center flex-wrap gap-1"
+                              style={{
+                                fontSize: "0.75rem",
+                                color: "#6b7f72",
+                                marginTop: "3px",
+                                lineHeight: 1.3,
+                              }}
+                            >
+                              <span>{categoryLabel || "Uncategorized"}</span>
+                              <span>·</span>
+                              <span>{tx.account_name}</span>
+                              {tx.subaccount_name && (
+                                <span
+                                  style={{
+                                    backgroundColor: "#f3f7f4",
+                                    color: "#2e4738",
+                                    padding: "1px 7px",
+                                    borderRadius: "50px",
+                                    fontSize: "0.68rem",
+                                    fontWeight: 500,
+                                    border: "1px solid #e2ebe4",
+                                  }}
+                                >
+                                  {tx.subaccount_name}
+                                </span>
+                              )}
+                            </div>
+
+                            <div
+                              style={{
+                                fontSize: "0.7rem",
+                                color: "#8b9d90",
+                                marginTop: "3px",
+                              }}
+                            >
+                              {tx.transaction_time}
+                            </div>
+                          </div>
                         </div>
-                      </td>
 
-                      {/* CATEGORY */}
-                      <td
-                        style={{
-                          padding: "14px 16px",
-                          fontSize: "0.84rem",
-                          color: "#4a5d52",
-                          border: "none",
-                        }}
-                      >
-                        {categoryLabel || "—"}
-                      </td>
-
-                      {/* ACCOUNT */}
-                      <td
-                        style={{
-                          padding: "14px 16px",
-                          fontSize: "0.84rem",
-                          color: "#4a5d52",
-                          border: "none",
-                        }}
-                      >
-                        {tx.account_name}
-                      </td>
-
-                      {/* SUB-ACCOUNT */}
-                      <td
-                        style={{
-                          padding: "14px 16px",
-                          fontSize: "0.84rem",
-                          color: tx.subaccount_name ? "#4a5d52" : "#9caea1",
-                          border: "none",
-                        }}
-                      >
-                        {tx.subaccount_name ? (
-                          <span
+                        {/* Right: Amount + Cancel Button */}
+                        <div className="d-flex flex-column align-items-end flex-shrink-0">
+                          <div
                             style={{
-                              backgroundColor: "#f3f7f4",
-                              color: "#2e4738",
-                              padding: "4px 10px",
-                              borderRadius: "50px",
-                              fontSize: "0.76rem",
-                              fontWeight: 500,
-                              border: "1px solid #e2ebe4",
+                              fontSize: "0.86rem",
+                              fontWeight: 600,
+                              color: isIncome ? "#16a34a" : "#dc2626",
+                              whiteSpace: "nowrap",
+                              lineHeight: 1.35,
                             }}
                           >
-                            {tx.subaccount_name}
-                          </span>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
+                            {isIncome
+                              ? `+ RM ${formatAmount(tx.amount)}`
+                              : `– RM ${formatAmount(tx.amount)}`}
+                          </div>
 
-                      {/* AMOUNT */}
-                      <td
-                        className="text-end"
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCancelModalError(null);
+                              setCancellingTx(tx);
+                            }}
+                            style={{
+                              background: "transparent",
+                              border: "none",
+                              color: "#dc2626",
+                              fontSize: "0.72rem",
+                              fontWeight: 500,
+                              cursor: "pointer",
+                              padding: "2px 0",
+                              marginTop: "6px",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "4px",
+                            }}
+                          >
+                            <i className="bi bi-arrow-counterclockwise" />
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+
+            {/* =====================================================
+                DESKTOP TABLE VIEW (>= 768px)
+                ===================================================== */}
+            <div className="table-responsive d-none d-md-block">
+              <table
+                className="table mb-0 align-middle"
+                style={{
+                  borderCollapse: "collapse",
+                  fontFamily: "var(--font-poppins), 'Poppins', sans-serif",
+                }}
+              >
+                <thead>
+                  <tr
+                    style={{
+                      borderBottom: "1px solid #eef2ed",
+                      backgroundColor: "#fcfdfc",
+                    }}
+                  >
+                    <th
+                      style={{
+                        padding: "14px 20px",
+                        fontSize: "0.7rem",
+                        fontWeight: 600,
+                        color: "#6b7f72",
+                        letterSpacing: "0.05em",
+                        textTransform: "uppercase",
+                        border: "none",
+                      }}
+                    >
+                      Time
+                    </th>
+                    <th
+                      style={{
+                        padding: "14px 16px",
+                        fontSize: "0.7rem",
+                        fontWeight: 600,
+                        color: "#6b7f72",
+                        letterSpacing: "0.05em",
+                        textTransform: "uppercase",
+                        border: "none",
+                      }}
+                    >
+                      Description
+                    </th>
+                    <th
+                      style={{
+                        padding: "14px 16px",
+                        fontSize: "0.7rem",
+                        fontWeight: 600,
+                        color: "#6b7f72",
+                        letterSpacing: "0.05em",
+                        textTransform: "uppercase",
+                        border: "none",
+                      }}
+                    >
+                      Category
+                    </th>
+                    <th
+                      style={{
+                        padding: "14px 16px",
+                        fontSize: "0.7rem",
+                        fontWeight: 600,
+                        color: "#6b7f72",
+                        letterSpacing: "0.05em",
+                        textTransform: "uppercase",
+                        border: "none",
+                      }}
+                    >
+                      Account
+                    </th>
+                    <th
+                      style={{
+                        padding: "14px 16px",
+                        fontSize: "0.7rem",
+                        fontWeight: 600,
+                        color: "#6b7f72",
+                        letterSpacing: "0.05em",
+                        textTransform: "uppercase",
+                        border: "none",
+                      }}
+                    >
+                      Sub-Account
+                    </th>
+                    <th
+                      className="text-end"
+                      style={{
+                        padding: "14px 16px",
+                        fontSize: "0.7rem",
+                        fontWeight: 600,
+                        color: "#6b7f72",
+                        letterSpacing: "0.05em",
+                        textTransform: "uppercase",
+                        border: "none",
+                      }}
+                    >
+                      Amount
+                    </th>
+                    <th
+                      className="text-end"
+                      style={{
+                        padding: "14px 20px",
+                        fontSize: "0.7rem",
+                        fontWeight: 600,
+                        color: "#6b7f72",
+                        letterSpacing: "0.05em",
+                        textTransform: "uppercase",
+                        border: "none",
+                      }}
+                    >
+                      Action
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {groupedTransactions.map((group) => (
+                    <React.Fragment key={group.date}>
+                      {/* DATE GROUP HEADER BAR */}
+                      <tr
                         style={{
-                          padding: "14px 16px",
-                          fontSize: "0.88rem",
-                          fontWeight: 600,
-                          color: isIncome ? "#16a34a" : "#1a2e23",
-                          border: "none",
-                          whiteSpace: "nowrap",
+                          backgroundColor: "#eef3ed",
+                          borderTop: "1px solid #e2ebe4",
+                          borderBottom: "1px solid #e2ebe4",
                         }}
                       >
-                        {isIncome
-                          ? `+ RM ${formatAmount(tx.amount)}`
-                          : `– RM ${formatAmount(tx.amount)}`}
-                      </td>
-
-                      {/* ACTION */}
-                      <td
-                        className="text-end"
-                        style={{
-                          padding: "14px 20px",
-                          border: "none",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setCancelModalError(null);
-                            setCancellingTx(tx);
-                          }}
+                        <td
+                          colSpan={7}
                           style={{
-                            background: "transparent",
+                            backgroundColor: "#eef3ed",
+                            padding: "8px 20px",
                             border: "none",
-                            color: "#dc2626",
-                            fontSize: "0.78rem",
-                            fontWeight: 500,
-                            cursor: "pointer",
-                            padding: "4px 8px",
-                            borderRadius: "8px",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "5px",
-                            transition: "background-color 0.15s ease",
+                            whiteSpace: "nowrap",
                           }}
-                          onMouseEnter={(e) =>
-                            (e.currentTarget.style.backgroundColor = "#fef2f2")
-                          }
-                          onMouseLeave={(e) =>
-                            (e.currentTarget.style.backgroundColor = "transparent")
-                          }
                         >
-                          <i className="bi bi-arrow-counterclockwise" />
-                          Cancel
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                          <div className="d-flex justify-content-between align-items-center">
+                            <span
+                              style={{
+                                fontSize: "0.78rem",
+                                fontWeight: 600,
+                                color: "#4a5d52",
+                              }}
+                            >
+                              {formatGroupDateHeader(group.date)}
+                            </span>
+                            <span
+                              className="d-inline-flex align-items-center gap-3"
+                              style={{
+                                fontSize: "0.8rem",
+                                fontWeight: 700,
+                              }}
+                            >
+                              {group.incomeTotal > 0 && (
+                                <span style={{ color: "#16a34a" }}>
+                                  + RM {formatAmount(group.incomeTotal)}
+                                </span>
+                              )}
+                              {group.expenseTotal > 0 && (
+                                <span style={{ color: "#4a5d52" }}>
+                                  – RM {formatAmount(group.expenseTotal)}
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {group.items.map((tx) => {
+                        const isIncome = tx.transaction_type === "income";
+                        const categoryLabel = isIncome
+                          ? tx.income_category
+                          : tx.expense_category;
+
+                        return (
+                          <tr
+                            key={tx.transaction_id}
+                            style={{
+                              borderBottom: "1px solid #f1f5f2",
+                              transition: "background-color 0.15s ease",
+                            }}
+                          >
+                            {/* TIME */}
+                            <td
+                              style={{
+                                padding: "14px 20px",
+                                border: "none",
+                                whiteSpace: "nowrap",
+                                fontSize: "0.82rem",
+                                fontWeight: 500,
+                                color: "#6b7f72",
+                              }}
+                            >
+                              {tx.transaction_time}
+                            </td>
+
+                            {/* DESCRIPTION WITH ICON BADGE */}
+                            <td style={{ padding: "14px 16px", border: "none" }}>
+                              <div className="d-flex align-items-center gap-3">
+                                <div
+                                  style={{
+                                    width: "32px",
+                                    height: "32px",
+                                    borderRadius: "50%",
+                                    backgroundColor: isIncome ? "#dcfce7" : "#fee2e2",
+                                    color: isIncome ? "#16a34a" : "#dc2626",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    fontSize: "0.9rem",
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  <i
+                                    className={
+                                      isIncome
+                                        ? "bi bi-arrow-down-right"
+                                        : "bi bi-arrow-up-right"
+                                    }
+                                  />
+                                </div>
+                                <span
+                                  style={{
+                                    fontSize: "0.87rem",
+                                    fontWeight: 600,
+                                    color: "#1a2e23",
+                                  }}
+                                >
+                                  {tx.description}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* CATEGORY */}
+                            <td
+                              style={{
+                                padding: "14px 16px",
+                                fontSize: "0.84rem",
+                                color: "#4a5d52",
+                                border: "none",
+                              }}
+                            >
+                              {categoryLabel || "—"}
+                            </td>
+
+                            {/* ACCOUNT */}
+                            <td
+                              style={{
+                                padding: "14px 16px",
+                                fontSize: "0.84rem",
+                                color: "#4a5d52",
+                                border: "none",
+                              }}
+                            >
+                              {tx.account_name}
+                            </td>
+
+                            {/* SUB-ACCOUNT */}
+                            <td
+                              style={{
+                                padding: "14px 16px",
+                                fontSize: "0.84rem",
+                                color: tx.subaccount_name ? "#4a5d52" : "#9caea1",
+                                border: "none",
+                              }}
+                            >
+                              {tx.subaccount_name ? (
+                                <span
+                                  style={{
+                                    backgroundColor: "#f3f7f4",
+                                    color: "#2e4738",
+                                    padding: "4px 10px",
+                                    borderRadius: "50px",
+                                    fontSize: "0.76rem",
+                                    fontWeight: 500,
+                                    border: "1px solid #e2ebe4",
+                                  }}
+                                >
+                                  {tx.subaccount_name}
+                                </span>
+                              ) : (
+                                "—"
+                              )}
+                            </td>
+
+                            {/* AMOUNT */}
+                            <td
+                              className="text-end"
+                              style={{
+                                padding: "14px 16px",
+                                fontSize: "0.88rem",
+                                fontWeight: 600,
+                                color: isIncome ? "#16a34a" : "#1a2e23",
+                                border: "none",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {isIncome
+                                ? `+ RM ${formatAmount(tx.amount)}`
+                                : `– RM ${formatAmount(tx.amount)}`}
+                            </td>
+
+                            {/* ACTION */}
+                            <td
+                              className="text-end"
+                              style={{
+                                padding: "14px 20px",
+                                border: "none",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCancelModalError(null);
+                                  setCancellingTx(tx);
+                                }}
+                                style={{
+                                  background: "transparent",
+                                  border: "none",
+                                  color: "#dc2626",
+                                  fontSize: "0.78rem",
+                                  fontWeight: 500,
+                                  cursor: "pointer",
+                                  padding: "4px 8px",
+                                  borderRadius: "8px",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: "5px",
+                                  transition: "background-color 0.15s ease",
+                                }}
+                                onMouseEnter={(e) =>
+                                  (e.currentTarget.style.backgroundColor = "#fef2f2")
+                                }
+                                onMouseLeave={(e) =>
+                                  (e.currentTarget.style.backgroundColor = "transparent")
+                                }
+                              >
+                                <i className="bi bi-arrow-counterclockwise" />
+                                Cancel
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </React.Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
 
       {/* =========================================================
