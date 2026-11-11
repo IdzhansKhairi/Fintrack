@@ -507,7 +507,7 @@ export default function WishlistPage() {
               {/* Status Filter Pill Tabs */}
               <div className="col-12 col-lg-auto">
                 <div
-                  className="d-inline-flex flex-wrap gap-1 p-1"
+                  className="d-inline-flex flex-wrap gap-1 p-1 fintrack-filter-pills"
                   style={{
                     backgroundColor: "#f3f7f4",
                     borderRadius: "14px",
@@ -518,11 +518,19 @@ export default function WishlistPage() {
                     { key: "all" as PurchaseFilter, label: `All (${items.length})` },
                     {
                       key: "not_purchased" as PurchaseFilter,
-                      label: `Not purchased yet (${stillWantedCount})`,
+                      label: (
+                        <>
+                          Not purchased<span className="d-none d-sm-inline"> yet</span> ({stillWantedCount})
+                        </>
+                      ),
                     },
                     {
                       key: "purchased" as PurchaseFilter,
-                      label: `Purchased already (${purchasedCount})`,
+                      label: (
+                        <>
+                          Purchased<span className="d-none d-sm-inline"> already</span> ({purchasedCount})
+                        </>
+                      ),
                     },
                   ].map((tab) => {
                     const active = statusFilter === tab.key;

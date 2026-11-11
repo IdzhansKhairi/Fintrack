@@ -69,6 +69,7 @@ export default function QRCodesPage() {
             value={activeTab}
             onChange={setActiveTab}
             size="large"
+            className="fintrack-qr-segmented"
             style={{
               backgroundColor: 'rgba(116, 168, 132, 0.15)',
               color: '#1a2e23',

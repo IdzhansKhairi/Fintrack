@@ -1959,7 +1959,7 @@ export default function DebtsPage() {
       <div className="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
         {/* Left: All | Lent | Borrowed segmented pill */}
         <div
-          className="d-inline-flex align-items-center p-1"
+          className="d-inline-flex align-items-center p-1 fintrack-mobile-full-pills"
           style={{
             backgroundColor: "#eef3ed",
             borderRadius: "50px",
@@ -1998,8 +1998,8 @@ export default function DebtsPage() {
         </div>
 
         {/* Right: Search Input + Pending / Settled Pills */}
-        <div className="d-flex align-items-center flex-wrap gap-2">
-          <div className="position-relative" style={{ minWidth: 230 }}>
+        <div className="d-flex align-items-center flex-wrap gap-2 flex-grow-1 flex-lg-grow-0 justify-content-lg-end">
+          <div className="position-relative fintrack-mobile-full-search" style={{ minWidth: 230 }}>
             <i
               className="bi bi-search position-absolute top-50 translate-middle-y"
               style={{ left: 13, color: "#8b9d90", fontSize: "0.8rem" }}
@@ -2057,7 +2057,7 @@ export default function DebtsPage() {
                 key={pill.key}
                 type="button"
                 onClick={() => setStatusFilter(pill.key)}
-                className="btn btn-sm rounded-pill"
+                className="btn btn-sm rounded-pill flex-fill flex-sm-grow-0"
                 style={{
                   backgroundColor: active ? "#69a980" : "#ffffff",
                   color: active ? "#ffffff" : "#4a5d52",

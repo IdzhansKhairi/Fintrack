@@ -2452,7 +2452,7 @@ export default function FinancingPage() {
           {/* Status Pills */}
           <div className="col-12 col-lg-auto">
             <div
-              className="d-inline-flex flex-wrap gap-1 p-1"
+              className="d-inline-flex flex-wrap gap-1 p-1 fintrack-filter-pills"
               style={{
                 backgroundColor: "#f3f7f4",
                 borderRadius: "14px",
